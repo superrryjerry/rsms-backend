@@ -1,0 +1,14 @@
+const express = require('express');
+const { authMiddleware, adminOnly } = require('../middleware/auth');
+
+const router = express.Router();
+router.use(authMiddleware, adminOnly);
+
+// 子路由模块
+router.use('/requests', require('./admin/requests'));
+router.use('/users', require('./admin/users'));
+router.use('/config', require('./admin/config'));
+router.use('/dealers', require('./admin/dealers'));
+router.use('/import', require('./admin/import'));
+
+module.exports = router;
