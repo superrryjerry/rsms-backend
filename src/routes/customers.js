@@ -32,9 +32,30 @@ router.get('/detail/:name', (req, res) => {
   const contracts = vins.length ? db.prepare(`SELECT * FROM contracts WHERE vin IN (${vins.map(() => '?').join(',')})`).all(...vins) : [];
   const workOrders = vins.length ? db.prepare(`SELECT * FROM work_orders WHERE vin IN (${vins.map(() => '?').join(',')}) ORDER BY order_date DESC`).all(...vins) : [];
 
-  // 销售活动：仅展示当前用户创建的
-  const activities = db.prepare('SELECT * FROM sales_activities WHERE customer_name = ? AND user_id = ? ORDER BY created_at DESC')
-    .all(req.params.name, req.user.id);
+  // 销售活动：根据经销商层级查询
+  // 1. 获取当前用户的经销商信息
+  const userDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(req.user.dealer_code);
+  
+  let activities = [];
+  if (userDealer && userDealer.level === 1) {
+    // 一级经销商：查询自己和所有子经销商的活动
+    const subDealers = db.prepare('SELECT dealer_code FROM dealers WHERE parent_dealer_code = ?')
+      .all(req.user.dealer_code);
+    const allDealerCodes = [req.user.dealer_code, ...subDealers.map(d => d.dealer_code)];
+    
+    // 获取这些经销商下所有用户的ID
+    const userIds = db.prepare(`SELECT id FROM users WHERE dealer_code IN (${allDealerCodes.map(() => '?').join(',')})`)
+      .all(...allDealerCodes).map(u => u.id);
+    
+    if (userIds.length > 0) {
+      activities = db.prepare(`SELECT * FROM sales_activities WHERE customer_name = ? AND user_id IN (${userIds.map(() => '?').join(',')}) ORDER BY created_at DESC`)
+        .all(req.params.name, ...userIds);
+    }
+  } else {
+    // 二级经销商或无层级：只查询自己的活动
+    activities = db.prepare('SELECT * FROM sales_activities WHERE customer_name = ? AND user_id = ? ORDER BY created_at DESC')
+      .all(req.params.name, req.user.id);
+  }
 
   // 判断是否有权新增活动
   const canAddActivity = vehicles.some(v => v.service_dealer === req.user.dealer_code);
