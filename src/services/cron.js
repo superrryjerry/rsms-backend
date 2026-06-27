@@ -50,7 +50,7 @@ function generateLeads() {
 
   const vehicles = db.prepare('SELECT v.*, c.contract_end_date, c.contract_set_mileage, c.mileage_used, c.contract_total_count, c.contract_done_count FROM vehicles v LEFT JOIN contracts c ON v.vin = c.vin WHERE v.service_dealer IS NOT NULL').all();
 
-  const insertLead = db.prepare("INSERT INTO leads (vin, lead_type, trigger_value, threshold_value, target_dealer) SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM leads WHERE vin = ? AND lead_type = ? AND target_dealer = ? AND created_at >= datetime('now', '-7 days'))");
+  const insertLead = db.prepare("INSERT INTO leads (vin, lead_type, trigger_value, threshold_value, target_dealer, status) SELECT ?, ?, ?, ?, ?, 'unfollowed' WHERE NOT EXISTS (SELECT 1 FROM leads WHERE vin = ? AND lead_type = ? AND target_dealer = ? AND created_at >= datetime('now', '-7 days'))");
 
   let count = 0;
   for (const v of vehicles) {

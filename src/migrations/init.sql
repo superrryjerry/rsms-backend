@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS dealers (
   dealer_code VARCHAR(32) PRIMARY KEY,
   dealer_name VARCHAR(128) NOT NULL,
   dealer_type VARCHAR(32) DEFAULT 'both',
+  parent_dealer_code VARCHAR(32) REFERENCES dealers(dealer_code),
+  level TINYINT DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -146,7 +148,7 @@ CREATE TABLE IF NOT EXISTS leads (
   trigger_value VARCHAR(128),
   threshold_value VARCHAR(128),
   target_dealer VARCHAR(32) REFERENCES dealers(dealer_code),
-  status VARCHAR(32) DEFAULT 'pending',
+  status VARCHAR(32) DEFAULT 'unfollowed',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   read_at DATETIME
 );

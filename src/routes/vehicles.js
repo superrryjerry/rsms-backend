@@ -111,6 +111,58 @@ router.post('/transfer', requireOwnership, (req, res) => {
   res.json({ code: 0, msg: '转移申请已提交' });
 });
 
+// PUT /api/vehicles/update-service-dealer - 编辑服务经销商（仅名下VIN）
+router.put('/update-service-dealer', requireOwnership, (req, res) => {
+  const { vin, service_dealer } = req.body;
+  if (!vin || !service_dealer) return res.status(400).json({ code: 400, msg: '缺少必要参数' });
+
+  const db = getDb();
+  
+  // 检查是否有权限编辑（管理员、一级经销商、或当前归属经销商）
+  const vehicle = db.prepare('SELECT * FROM vehicles WHERE vin = ?').get(vin);
+  if (!vehicle) return res.status(404).json({ code: 404, msg: '车辆不存在' });
+
+  // 获取当前用户的经销商信息
+  const userDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(req.user.dealer_code);
+  const targetDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(service_dealer);
+  
+  if (!targetDealer) return res.status(400).json({ code: 400, msg: '目标经销商不存在' });
+
+  // 权限检查：管理员、当前归属经销商、或一级经销商可以编辑
+  let canEdit = false;
+  if (req.user.role === 'admin') {
+    canEdit = true;
+  } else if (vehicle.service_dealer === req.user.dealer_code) {
+    canEdit = true;
+  } else if (userDealer && userDealer.level === 1) {
+    // 一级经销商可以编辑其下属二级经销商的VIN
+    const isSubDealer = db.prepare('SELECT COUNT(*) as c FROM dealers WHERE dealer_code = ? AND parent_dealer_code = ?')
+      .get(vehicle.service_dealer, req.user.dealer_code);
+    if (isSubDealer && isSubDealer.c > 0) {
+      canEdit = true;
+    }
+  }
+
+  if (!canEdit) {
+    return res.status(403).json({ code: 403, msg: '无权编辑此车辆的服务经销商' });
+  }
+
+  try {
+    db.prepare(`UPDATE vehicles SET service_dealer = ?, updated_at = datetime('now') WHERE vin = ?`)
+      .run(service_dealer, vin);
+    
+    // 更新客户汇总
+    if (vehicle.customer_name) {
+      updateCustomerSummary(db, vehicle.customer_name);
+    }
+
+    res.json({ code: 0, msg: '服务经销商已更新' });
+  } catch (e) {
+    console.error('[Vehicles] 更新服务经销商失败:', e.message);
+    res.status(500).json({ code: 500, msg: '更新失败' });
+  }
+});
+
 // GET /api/vehicles/my-requests
 router.get('/my-requests', (req, res) => {
   const db = getDb();

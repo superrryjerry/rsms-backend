@@ -25,24 +25,45 @@ router.get('/list', (req, res) => {
 router.get('/unread-count', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT COUNT(*) as c FROM leads WHERE target_dealer = ? AND status = ?')
-    .get(req.user.dealer_code, 'pending');
+    .get(req.user.dealer_code, 'unfollowed');
   res.json({ code: 0, data: { count: row.c } });
 });
 
 // POST /api/leads/:id/read
 router.post('/:id/read', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE leads SET status = 'read', read_at = datetime('now') WHERE id = ? AND target_dealer = ?")
+  db.prepare("UPDATE leads SET status = 'following', read_at = datetime('now') WHERE id = ? AND target_dealer = ?")
     .run(req.params.id, req.user.dealer_code);
-  res.json({ code: 0, msg: '已标记为已读' });
+  res.json({ code: 0, msg: '已标记为跟进中' });
 });
 
-// POST /api/leads/:id/handle
+// PUT /api/leads/:id/status - 更新线索状态
+router.put('/:id/status', (req, res) => {
+  const { status } = req.body;
+  const validStatuses = ['unfollowed', 'following', 'completed'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ code: 400, msg: '无效的状态值' });
+  }
+
+  const db = getDb();
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ? AND target_dealer = ?')
+    .get(req.params.id, req.user.dealer_code);
+  
+  if (!lead) return res.status(404).json({ code: 404, msg: '线索不存在' });
+
+  db.prepare("UPDATE leads SET status = ?, read_at = datetime('now') WHERE id = ?")
+    .run(status, req.params.id);
+  
+  const statusMap = { unfollowed: '未跟进', following: '跟进中', completed: '已结束' };
+  res.json({ code: 0, msg: `状态已更新为${statusMap[status]}` });
+});
+
+// POST /api/leads/:id/handle - 标记为已结束（兼容旧接口）
 router.post('/:id/handle', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE leads SET status = 'handled', read_at = datetime('now') WHERE id = ? AND target_dealer = ?")
+  db.prepare("UPDATE leads SET status = 'completed', read_at = datetime('now') WHERE id = ? AND target_dealer = ?")
     .run(req.params.id, req.user.dealer_code);
-  res.json({ code: 0, msg: '已标记为已处理' });
+  res.json({ code: 0, msg: '已标记为已结束' });
 });
 
 module.exports = router;
