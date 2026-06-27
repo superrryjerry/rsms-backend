@@ -5,6 +5,10 @@ const { getDb } = require('../config/db');
 // 执行基础表结构
 const sql = fs.readFileSync(path.join(__dirname, 'init.sql'), 'utf-8');
 const db = getDb();
+
+// 禁用外键约束检查（允许导入时经销商代码不存在）
+db.exec('PRAGMA foreign_keys = OFF');
+
 db.exec(sql);
 
 // V2 迁移：自动检测并添加新字段

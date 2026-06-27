@@ -26,6 +26,10 @@ router.post('/pool', upload.single('file'), validateExcelFile, (req, res) => {
   fs.unlink(req.file.path, () => {});
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   const db = getDb();
+  
+  // 禁用外键约束，允许导入时经销商代码不存在
+  db.exec('PRAGMA foreign_keys = OFF');
+  
   let success = 0, fail = 0;
   const errors = [];
 
@@ -56,6 +60,10 @@ router.post('/vehicles', upload.single('file'), validateExcelFile, (req, res) =>
   fs.unlink(req.file.path, () => {});
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   const db = getDb();
+  
+  // 禁用外键约束
+  db.exec('PRAGMA foreign_keys = OFF');
+  
   let success = 0, fail = 0;
   const errors = [];
 
@@ -88,6 +96,10 @@ router.post('/contracts', upload.single('file'), validateExcelFile, (req, res) =
   fs.unlink(req.file.path, () => {});
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   const db = getDb();
+  
+  // 禁用外键约束
+  db.exec('PRAGMA foreign_keys = OFF');
+  
   let success = 0, fail = 0;
 
   const tx = db.transaction(() => {
@@ -117,6 +129,10 @@ router.post('/workorders', upload.single('file'), validateExcelFile, (req, res) 
   fs.unlink(req.file.path, () => {});
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   const db = getDb();
+  
+  // 禁用外键约束
+  db.exec('PRAGMA foreign_keys = OFF');
+  
   let success = 0, fail = 0;
 
   const tx = db.transaction(() => {
@@ -140,6 +156,10 @@ router.post('/customers', upload.single('file'), validateExcelFile, (req, res) =
   fs.unlink(req.file.path, () => {});
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   const db = getDb();
+  
+  // 禁用外键约束
+  db.exec('PRAGMA foreign_keys = OFF');
+  
   let success = 0, fail = 0;
 
   const tx = db.transaction(() => {
