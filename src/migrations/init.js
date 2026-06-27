@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../config/db');
 
+// 执行基础表结构
 const sql = fs.readFileSync(path.join(__dirname, 'init.sql'), 'utf-8');
-
 const db = getDb();
 db.exec(sql);
 
@@ -20,9 +20,14 @@ function addColumnIfNotExists(table, column, definition) {
 addColumnIfNotExists('customers', 'tag', 'VARCHAR(32)');
 addColumnIfNotExists('customers', 'city', 'VARCHAR(64)');
 addColumnIfNotExists('customers', 'registration_info', 'TEXT');
+addColumnIfNotExists('customers', 'sales_dealers_summary', 'TEXT');
+addColumnIfNotExists('customers', 'service_dealers_summary', 'TEXT');
 // vehicles
+addColumnIfNotExists('vehicles', 'vin_full', 'VARCHAR(64)');
 addColumnIfNotExists('vehicles', 'central_contract', 'VARCHAR(64)');
 addColumnIfNotExists('vehicles', 'annual_income', 'DECIMAL(12,2)');
+// public_pool
+addColumnIfNotExists('public_pool', 'vin_full', 'VARCHAR(64)');
 // contracts
 addColumnIfNotExists('contracts', 'contract_start_date', 'DATE');
 addColumnIfNotExists('contracts', 'contract_close_date', 'DATE');
@@ -31,15 +36,5 @@ addColumnIfNotExists('contracts', 'headquarters_contract_no', 'VARCHAR(64)');
 // work_orders
 addColumnIfNotExists('work_orders', 'order_no', 'VARCHAR(64)');
 addColumnIfNotExists('work_orders', 'dealer_code', 'VARCHAR(32)');
-
-// 创建默认管理员 (phone: admin, password: admin123)
-const bcrypt = require('bcryptjs');
-const hash = bcrypt.hashSync('admin123', 10);
-const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get('admin');
-if (!existing) {
-  db.prepare(`INSERT INTO users (phone, password_hash, name, role) VALUES (?, ?, ?, ?)`)
-    .run('admin', hash, '系统管理员', 'admin');
-  console.log('默认管理员已创建: phone=admin, password=admin123');
-}
 
 console.log('数据库初始化完成');

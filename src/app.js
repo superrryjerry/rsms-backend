@@ -45,10 +45,9 @@ app.use(express.urlencoded({ extended: true }));
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// 初始化数据库
-const initSql = fs.readFileSync(path.join(__dirname, 'migrations/init.sql'), 'utf-8');
+// 初始化数据库（执行init.sql + 迁移脚本）
+require('./migrations/init');
 const db = getDb();
-db.exec(initSql);
 
 // 创建默认管理员（随机密码，首次登录需修改）
 const bcrypt = require('bcryptjs');
