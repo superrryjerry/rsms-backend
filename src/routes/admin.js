@@ -10,5 +10,7 @@ router.use('/users', require('./admin/users'));
 router.use('/config', require('./admin/config'));
 router.use('/dealers', require('./admin/dealers'));
 router.use('/import', require('./admin/import'));
+router.use('/templates', require('./admin/templates'));
+router.use('/activities', require('./admin/activities'));
 
 module.exports = router;

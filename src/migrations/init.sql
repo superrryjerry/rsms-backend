@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
   model VARCHAR(128),
   delivery_date DATE,
   production_date DATE,
+  central_contract VARCHAR(64),
+  annual_income DECIMAL(12,2),
   claimed_by INTEGER REFERENCES users(id),
   claimed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -62,6 +64,9 @@ CREATE TABLE IF NOT EXISTS customers (
   customer_name VARCHAR(128) UNIQUE NOT NULL,
   sales_dealers_summary VARCHAR(512),
   service_dealers_summary VARCHAR(512),
+  tag VARCHAR(32),
+  city VARCHAR(64),
+  registration_info TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -88,11 +93,15 @@ CREATE TABLE IF NOT EXISTS sales_activities (
 CREATE TABLE IF NOT EXISTS contracts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vin VARCHAR(32) NOT NULL REFERENCES vehicles(vin),
+  contract_start_date DATE,
   contract_end_date DATE,
+  contract_close_date DATE,
   contract_set_mileage INTEGER DEFAULT 0,
   mileage_used INTEGER DEFAULT 0,
   contract_total_count INTEGER DEFAULT 0,
   contract_done_count INTEGER DEFAULT 0,
+  contract_type VARCHAR(64),
+  headquarters_contract_no VARCHAR(64),
   status VARCHAR(32) DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -102,10 +111,12 @@ CREATE TABLE IF NOT EXISTS contracts (
 CREATE TABLE IF NOT EXISTS work_orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vin VARCHAR(32) NOT NULL REFERENCES vehicles(vin),
+  order_no VARCHAR(64),
   order_date DATE,
   order_type VARCHAR(64),
   order_content TEXT,
   service_dealer VARCHAR(32),
+  dealer_code VARCHAR(32),
   amount DECIMAL(10,2),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

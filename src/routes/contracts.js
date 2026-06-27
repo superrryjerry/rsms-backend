@@ -12,11 +12,11 @@ router.get('/list', (req, res) => {
   let where = '1=1';
   const params = [];
   if (keyword) {
-    where += ' AND (c.vin LIKE ? OR v.customer_name LIKE ?)';
-    params.push(`%${keyword}%`, `%${keyword}%`);
+    where += ' AND (c.vin LIKE ? OR v.license_plate LIKE ? OR c.headquarters_contract_no LIKE ?)';
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   const total = db.prepare(`SELECT COUNT(*) as c FROM contracts c LEFT JOIN vehicles v ON c.vin = v.vin WHERE ${where}`).get(...params).c;
-  const list = db.prepare(`SELECT c.*, v.service_dealer, v.customer_name FROM contracts c LEFT JOIN vehicles v ON c.vin = v.vin WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
+  const list = db.prepare(`SELECT c.*, v.license_plate, v.customer_name, v.service_dealer FROM contracts c LEFT JOIN vehicles v ON c.vin = v.vin WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
     .all(...params, Number(size), (Number(page) - 1) * Number(size));
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });

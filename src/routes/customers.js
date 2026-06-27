@@ -44,14 +44,29 @@ router.get('/detail/:name', (req, res) => {
 
 // POST /api/customers/create
 router.post('/create', (req, res) => {
-  const { customer_name } = req.body;
+  const { customer_name, tag, city, registration_info } = req.body;
   if (!customer_name) return res.json({ code: 400, msg: '客户名称不能为空' });
   const db = getDb();
   try {
-    db.prepare('INSERT INTO customers (customer_name) VALUES (?)').run(customer_name);
+    db.prepare('INSERT INTO customers (customer_name, tag, city, registration_info) VALUES (?, ?, ?, ?)')
+      .run(customer_name, tag || null, city || null, registration_info || null);
     res.json({ code: 0, msg: '客户创建成功' });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.json({ code: 400, msg: '客户名称已存在' });
+    res.json({ code: 500, msg: e.message });
+  }
+});
+
+// PUT /api/customers/update
+router.put('/update', (req, res) => {
+  const { customer_name, tag, city, registration_info } = req.body;
+  if (!customer_name) return res.json({ code: 400, msg: '客户名称不能为空' });
+  const db = getDb();
+  try {
+    db.prepare(`UPDATE customers SET tag=?, city=?, registration_info=?, updated_at=datetime('now') WHERE customer_name=?`)
+      .run(tag || null, city || null, registration_info || null, customer_name);
+    res.json({ code: 0, msg: '客户更新成功' });
+  } catch (e) {
     res.json({ code: 500, msg: e.message });
   }
 });

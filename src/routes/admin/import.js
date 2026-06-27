@@ -66,9 +66,9 @@ router.post('/vehicles', upload.single('file'), validateExcelFile, (req, res) =>
       if (!vin) { fail++; continue; }
       try {
         db.prepare('DELETE FROM public_pool WHERE vin = ?').run(vin);
-        db.prepare(`INSERT OR REPLACE INTO vehicles (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, service_dealer, model, delivery_date, production_date, claimed_by, claimed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
-          .run(vin, r['VIN_FULL'] || r['vin_full'] || vin, r['车牌'] || '', r['客户名称'] || '', r['车辆类型'] || '', r['销售经销商'] || '', r['服务经销商'] || '', r['车型'] || '', r['交付日期'] || null, r['生产日期'] || null, req.user.id);
+        db.prepare(`INSERT OR REPLACE INTO vehicles (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, service_dealer, model, delivery_date, production_date, central_contract, annual_income, claimed_by, claimed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
+          .run(vin, r['VIN_FULL'] || r['vin_full'] || vin, r['车牌'] || '', r['客户名称'] || '', r['车辆类型'] || '', r['销售经销商'] || '', r['服务经销商'] || '', r['车型'] || '', r['交付日期'] || null, r['生产日期'] || null, r['中央合同'] || r['central_contract'] || null, r['年总收入'] || r['annual_income'] || null, req.user.id);
         const cn = r['客户名称'] || '';
         if (cn && !db.prepare('SELECT id FROM customers WHERE customer_name = ?').get(cn)) {
           db.prepare('INSERT INTO customers (customer_name) VALUES (?)').run(cn);
@@ -97,11 +97,11 @@ router.post('/contracts', upload.single('file'), validateExcelFile, (req, res) =
       try {
         const existing = db.prepare('SELECT id FROM contracts WHERE vin = ?').get(vin);
         if (existing) {
-          db.prepare(`UPDATE contracts SET contract_end_date=?, contract_set_mileage=?, mileage_used=?, contract_total_count=?, contract_done_count=?, updated_at=datetime('now') WHERE vin=?`)
-            .run(r['结束日期'] || r['contract_end_date'] || null, r['设置里程'] || r['contract_set_mileage'] || 0, r['已用里程'] || r['mileage_used'] || 0, r['总次数'] || r['contract_total_count'] || 0, r['已完成次数'] || r['contract_done_count'] || 0, vin);
+          db.prepare(`UPDATE contracts SET contract_start_date=?, contract_end_date=?, contract_close_date=?, contract_set_mileage=?, mileage_used=?, contract_total_count=?, contract_done_count=?, contract_type=?, headquarters_contract_no=?, status=?, updated_at=datetime('now') WHERE vin=?`)
+            .run(r['开始日期'] || r['contract_start_date'] || null, r['结束日期'] || r['contract_end_date'] || null, r['关闭日期'] || r['contract_close_date'] || null, r['设置里程'] || r['contract_set_mileage'] || 0, r['已用里程'] || r['mileage_used'] || 0, r['总次数'] || r['contract_total_count'] || 0, r['已完成次数'] || r['contract_done_count'] || 0, r['合同类型'] || r['contract_type'] || null, r['总部合同编号'] || r['headquarters_contract_no'] || null, r['状态'] || r['status'] || 'active', vin);
         } else {
-          db.prepare(`INSERT INTO contracts (vin, contract_end_date, contract_set_mileage, mileage_used, contract_total_count, contract_done_count) VALUES (?,?,?,?,?,?)`)
-            .run(vin, r['结束日期'] || null, r['设置里程'] || 0, r['已用里程'] || 0, r['总次数'] || 0, r['已完成次数'] || 0);
+          db.prepare(`INSERT INTO contracts (vin, contract_start_date, contract_end_date, contract_close_date, contract_set_mileage, mileage_used, contract_total_count, contract_done_count, contract_type, headquarters_contract_no, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(vin, r['开始日期'] || null, r['结束日期'] || null, r['关闭日期'] || null, r['设置里程'] || 0, r['已用里程'] || 0, r['总次数'] || 0, r['已完成次数'] || 0, r['合同类型'] || null, r['总部合同编号'] || null, r['状态'] || 'active');
         }
         success++;
       } catch (e) { fail++; }
@@ -124,14 +124,43 @@ router.post('/workorders', upload.single('file'), validateExcelFile, (req, res) 
       const vin = r['VIN'] || r['vin'];
       if (!vin) { fail++; continue; }
       try {
-        db.prepare(`INSERT INTO work_orders (vin, order_date, order_type, order_content, service_dealer, amount) VALUES (?,?,?,?,?,?)`)
-          .run(vin, r['工单日期'] || r['order_date'] || null, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['金额'] || r['amount'] || 0);
+        db.prepare(`INSERT INTO work_orders (vin, order_no, order_date, order_type, order_content, service_dealer, dealer_code, amount) VALUES (?,?,?,?,?,?,?,?)`)
+          .run(vin, r['工单号'] || r['order_no'] || null, r['工单日期'] || r['order_date'] || null, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
         success++;
       } catch (e) { fail++; }
     }
   });
   try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail } }); }
   catch (e) { console.error('[Import] 工单导入失败:', e.message); res.status(500).json({ code: 500, msg: '导入失败' }); }
+});
+
+// POST /api/admin/import/customers
+router.post('/customers', upload.single('file'), validateExcelFile, (req, res) => {
+  const wb = XLSX.readFile(req.file.path);
+  fs.unlink(req.file.path, () => {});
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  const db = getDb();
+  let success = 0, fail = 0;
+
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const name = r['客户名称'] || r['customer_name'];
+      if (!name) { fail++; continue; }
+      try {
+        const existing = db.prepare('SELECT id FROM customers WHERE customer_name = ?').get(name);
+        if (existing) {
+          db.prepare(`UPDATE customers SET tag=?, city=?, registration_info=?, updated_at=datetime('now') WHERE customer_name=?`)
+            .run(r['标签'] || r['tag'] || null, r['所在市'] || r['city'] || null, r['注册信息'] || r['registration_info'] || null, name);
+        } else {
+          db.prepare('INSERT INTO customers (customer_name, tag, city, registration_info) VALUES (?,?,?,?)')
+            .run(name, r['标签'] || r['tag'] || null, r['所在市'] || r['city'] || null, r['注册信息'] || r['registration_info'] || null);
+        }
+        success++;
+      } catch (e) { fail++; }
+    }
+  });
+  try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail } }); }
+  catch (e) { console.error('[Import] 客户导入失败:', e.message); res.status(500).json({ code: 500, msg: '导入失败' }); }
 });
 
 module.exports = router;
