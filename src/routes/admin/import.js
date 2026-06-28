@@ -22,7 +22,7 @@ function validateExcelFile(req, res, next) {
 
 // 辅助函数：清理VIN字段（处理数字格式问题）
 function cleanVin(value) {
-  if (!value && value !== 0) return '';
+  if (value === null || value === undefined || value === '') return '';
   let vin = String(value).trim();
   // 去掉Excel数字格式产生的 .0 后缀
   if (vin.endsWith('.0')) vin = vin.slice(0, -2);
@@ -31,29 +31,38 @@ function cleanVin(value) {
     const num = Number(value);
     if (!isNaN(num)) vin = String(Math.floor(num));
   }
+  // 如果最终结果是纯数字字符串，确保没有小数点
+  if (/^\d+\.\d+$/.test(vin)) vin = vin.split('.')[0];
   return vin;
 }
 
 // 辅助函数：格式化日期（处理Excel日期序列号或Date对象）
 function formatDate(value) {
-  if (!value) return null;
+  if (value === null || value === undefined || value === '') return null;
   // 如果是Date对象
   if (value instanceof Date && !isNaN(value)) {
     return value.toISOString().split('T')[0];
   }
   // 如果是数字（Excel日期序列号）
   if (typeof value === 'number') {
-    // Excel日期基准：1900-01-01（但Excel有个bug把1900当作闰年）
     const excelEpoch = new Date(1899, 11, 30);
     const date = new Date(excelEpoch.getTime() + value * 86400000);
     return date.toISOString().split('T')[0];
   }
-  // 如果是字符串，尝试解析
+  // 如果是字符串
   const str = String(value).trim();
   if (!str) return null;
-  // 已经是 YYYY-MM-DD 格式
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  // 尝试解析其他格式
+  // 尝试解析为数字（Excel序列号可能是字符串格式）
+  const num = Number(str);
+  if (!isNaN(num) && num > 1 && num < 100000) {
+    // 看起来像Excel日期序列号（1-100000范围）
+    const excelEpoch = new Date(1899, 11, 30);
+    const date = new Date(excelEpoch.getTime() + num * 86400000);
+    const iso = date.toISOString().split('T')[0];
+    // 只接受合理日期范围（1990-2050）
+    if (iso >= '1990-01-01' && iso <= '2050-12-31') return iso;
+  }
+  // 尝试解析为日期字符串
   const d = new Date(str);
   if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   return str;
@@ -80,7 +89,7 @@ router.post('/pool', upload.single('file'), validateExcelFile, (req, res) => {
       const exists = db.prepare('SELECT vin FROM vehicles WHERE vin = ?').get(vin);
       if (exists) { fail++; errors.push(`第${i + 2}行: VIN已存在于车辆表`); continue; }
       try {
-        const vinFull = cleanVin(r['VIN_FULL'] || r['vin_full']) || vin;
+        const vinFull = cleanVin(r['VIN全称'] || r['VIN_FULL'] || r['vin_full']) || vin;
         const deliveryDate = formatDate(r['交付日期'] || r['delivery_date']);
         const productionDate = formatDate(r['生产日期'] || r['production_date']);
         db.prepare(`INSERT OR REPLACE INTO public_pool (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, model, delivery_date, production_date)
@@ -112,23 +121,33 @@ router.post('/vehicles', upload.single('file'), validateExcelFile, (req, res) =>
   const tx = db.transaction(() => {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      // 支持多种字段名映射
       const vin = cleanVin(r['VIN'] || r['vin']);
       if (!vin) { fail++; errors.push(`第${i + 2}行: 缺少VIN`); continue; }
       try {
-        const vinFull = cleanVin(r['VIN_FULL'] || r['vin_full']) || vin;
+        const vinFull = cleanVin(r['VIN全称'] || r['VIN_FULL'] || r['vin_full']) || vin;
         const deliveryDate = formatDate(r['交付日期'] || r['delivery_date']);
         const productionDate = formatDate(r['生产日期'] || r['production_date']);
+        
+        // 字段映射：是否有中央合同 -> central_contract, 总收入 -> annual_income
+        const centralContract = r['是否有中央合同'] || r['中央合同'] || r['central_contract'] || null;
+        const annualIncome = r['总收入'] || r['年总收入'] || r['annual_income'] || null;
+        
         db.prepare('DELETE FROM public_pool WHERE vin = ?').run(vin);
+        const now = new Date().toISOString();
         db.prepare(`INSERT OR REPLACE INTO vehicles (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, service_dealer, model, delivery_date, production_date, central_contract, annual_income, claimed_by, claimed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
-          .run(vin, vinFull, r['车牌'] || '', r['客户名称'] || '', r['车辆类型'] || '', r['销售经销商'] || '', r['服务经销商'] || '', r['车型'] || '', deliveryDate, productionDate, r['中央合同'] || r['central_contract'] || null, r['年总收入'] || r['annual_income'] || null, req.user.id);
-        const cn = r['客户名称'] || '';
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(vin, vinFull, r['车牌'] || r['license_plate'] || '', r['客户名称'] || r['customer_name'] || '', 
+            r['车辆类型'] || r['vehicle_type'] || '', r['销售经销商'] || r['sales_dealer'] || '', 
+            r['服务经销商'] || r['service_dealer'] || '', r['车型'] || r['model'] || '', 
+            deliveryDate, productionDate, centralContract, annualIncome, req.user.id, now);
+        const cn = r['客户名称'] || r['customer_name'] || '';
         if (cn && !db.prepare('SELECT id FROM customers WHERE customer_name = ?').get(cn)) {
           db.prepare('INSERT INTO customers (customer_name) VALUES (?)').run(cn);
         }
         if (cn) updateCustomerSummary(db, cn);
         success++;
-      } catch (e) { fail++; errors.push(`第${i + 2}行: 数据异常`); }
+      } catch (e) { fail++; errors.push(`第${i + 2}行: 数据异常 - ${e.message}`); }
     }
   });
   try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail, errors: errors.slice(0, 20) } }); }
@@ -157,8 +176,9 @@ router.post('/contracts', upload.single('file'), validateExcelFile, (req, res) =
         const closeDate = formatDate(r['关闭日期'] || r['contract_close_date']);
         const existing = db.prepare('SELECT id FROM contracts WHERE vin = ?').get(vin);
         if (existing) {
-          db.prepare(`UPDATE contracts SET contract_start_date=?, contract_end_date=?, contract_close_date=?, contract_set_mileage=?, mileage_used=?, contract_total_count=?, contract_done_count=?, contract_type=?, headquarters_contract_no=?, status=?, updated_at=datetime('now') WHERE vin=?`)
-            .run(startDate, endDate, closeDate, r['设置里程'] || r['contract_set_mileage'] || 0, r['已用里程'] || r['mileage_used'] || 0, r['总次数'] || r['contract_total_count'] || 0, r['已完成次数'] || r['contract_done_count'] || 0, r['合同类型'] || r['contract_type'] || null, r['总部合同编号'] || r['headquarters_contract_no'] || null, r['状态'] || r['status'] || 'active', vin);
+          const now = new Date().toISOString();
+          db.prepare(`UPDATE contracts SET contract_start_date=?, contract_end_date=?, contract_close_date=?, contract_set_mileage=?, mileage_used=?, contract_total_count=?, contract_done_count=?, contract_type=?, headquarters_contract_no=?, status=?, updated_at=? WHERE vin=?`)
+            .run(startDate, endDate, closeDate, r['设置里程'] || r['contract_set_mileage'] || 0, r['已用里程'] || r['mileage_used'] || 0, r['总次数'] || r['contract_total_count'] || 0, r['已完成次数'] || r['contract_done_count'] || 0, r['合同类型'] || r['contract_type'] || null, r['总部合同编号'] || r['headquarters_contract_no'] || null, r['状态'] || r['status'] || 'active', now, vin);
         } else {
           db.prepare(`INSERT INTO contracts (vin, contract_start_date, contract_end_date, contract_close_date, contract_set_mileage, mileage_used, contract_total_count, contract_done_count, contract_type, headquarters_contract_no, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
             .run(vin, startDate, endDate, closeDate, r['设置里程'] || 0, r['已用里程'] || 0, r['总次数'] || 0, r['已完成次数'] || 0, r['合同类型'] || null, r['总部合同编号'] || null, r['状态'] || 'active');
@@ -241,8 +261,9 @@ router.post('/customers', upload.single('file'), validateExcelFile, (req, res) =
       try {
         const existing = db.prepare('SELECT id FROM customers WHERE customer_name = ?').get(name);
         if (existing) {
-          db.prepare(`UPDATE customers SET tag=?, city=?, registration_info=?, updated_at=datetime('now') WHERE customer_name=?`)
-            .run(r['标签'] || r['tag'] || null, r['所在市'] || r['city'] || null, r['注册信息'] || r['registration_info'] || null, name);
+          const now = new Date().toISOString();
+          db.prepare(`UPDATE customers SET tag=?, city=?, registration_info=?, updated_at=? WHERE customer_name=?`)
+            .run(r['标签'] || r['tag'] || null, r['所在市'] || r['city'] || null, r['注册信息'] || r['registration_info'] || null, now, name);
         } else {
           db.prepare('INSERT INTO customers (customer_name, tag, city, registration_info) VALUES (?,?,?,?)')
             .run(name, r['标签'] || r['tag'] || null, r['所在市'] || r['city'] || null, r['注册信息'] || r['registration_info'] || null);

@@ -112,8 +112,9 @@ function updateCustomerSummary(db, customerName) {
     if (r.sales_dealer) salesSet.add(r.sales_dealer);
     if (r.service_dealer) serviceSet.add(r.service_dealer);
   });
-  db.prepare('UPDATE customers SET sales_dealers_summary = ?, service_dealers_summary = ?, updated_at = datetime("now") WHERE customer_name = ?')
-    .run([...salesSet].join(','), [...serviceSet].join(','), customerName);
+  const now = new Date().toISOString();
+  db.prepare('UPDATE customers SET sales_dealers_summary = ?, service_dealers_summary = ?, updated_at = ? WHERE customer_name = ?')
+    .run([...salesSet].join(','), [...serviceSet].join(','), now, customerName);
 }
 
 module.exports = router;
