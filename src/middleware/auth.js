@@ -6,7 +6,9 @@ const JWT_EXPIRES = '7d';
 
 // JWT 鉴权中间件
 function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  // 支持从 Authorization header 或 URL query 参数获取 token
+  let token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token && req.query.token) token = req.query.token;
   if (!token) return res.status(401).json({ code: 401, msg: '未登录' });
 
   try {
