@@ -175,4 +175,42 @@ router.get('/my-requests', (req, res) => {
   res.json({ code: 0, data: list });
 });
 
+// GET /api/vehicles/export - 导出车辆列表
+router.get('/export', (req, res) => {
+  const XLSX = require('xlsx');
+  const db = getDb();
+  const { keyword } = req.query;
+  let where = '1=1';
+  const params = [];
+  if (keyword) {
+    where += ' AND (v.vin LIKE ? OR v.vin_full LIKE ? OR v.license_plate LIKE ? OR v.customer_name LIKE ? OR v.model LIKE ? OR v.service_dealer LIKE ?)';
+    const k = `%${keyword}%`;
+    params.push(k, k, k, k, k, k);
+  }
+  const list = db.prepare(`SELECT v.* FROM vehicles v WHERE ${where} ORDER BY v.updated_at DESC`).all(...params);
+  const data = list.map(r => ({
+    'VIN': r.vin,
+    '完整VIN': r.vin_full || '',
+    '车牌': r.license_plate || '',
+    '客户名称': r.customer_name || '',
+    '车辆类型': r.vehicle_type || '',
+    '销售经销商': r.sales_dealer || '',
+    '服务经销商': r.service_dealer || '',
+    '车型': r.model || '',
+    '交付日期': r.delivery_date || '',
+    '生产日期': r.production_date || '',
+    '中央合同': r.central_contract || '',
+    '年总收入': r.annual_income || '',
+    '创建时间': r.created_at || '',
+    '更新时间': r.updated_at || ''
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, '车辆列表');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename=vehicles_${Date.now()}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 module.exports = router;

@@ -72,4 +72,11 @@ try {
   console.log('[Migration] 经销商层级字段已存在');
 }
 
+// 添加工单号索引（加速导入覆盖查询）
+try {
+  db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_order_no ON work_orders(order_no)');
+} catch (e) {
+  console.log('[Migration] 工单号索引跳过:', e.message);
+}
+
 console.log('数据库初始化完成');

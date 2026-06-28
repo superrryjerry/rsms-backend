@@ -92,4 +92,37 @@ router.put('/update', (req, res) => {
   }
 });
 
+// GET /api/customers/export - 导出客户列表
+router.get('/export', (req, res) => {
+  const XLSX = require('xlsx');
+  const db = getDb();
+  const { keyword } = req.query;
+  let where = '1=1';
+  const params = [];
+  if (keyword) { where += ' AND c.customer_name LIKE ?'; params.push(`%${keyword}%`); }
+
+  const list = db.prepare(`SELECT c.customer_name, c.tag, c.city, c.registration_info, c.sales_dealers_summary, c.service_dealers_summary, c.created_at, c.updated_at
+    FROM customers c WHERE ${where} ORDER BY c.updated_at DESC`).all(...params);
+
+  const data = list.map(r => ({
+    '客户名称': r.customer_name,
+    '标签': r.tag || '',
+    '所在市': r.city || '',
+    '注册信息': r.registration_info || '',
+    '销售经销商': r.sales_dealers_summary || '',
+    '服务经销商': r.service_dealers_summary || '',
+    '创建时间': r.created_at || '',
+    '更新时间': r.updated_at || ''
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, '客户列表');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Disposition', `attachment; filename=customers_${Date.now()}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 module.exports = router;

@@ -123,7 +123,7 @@ router.post('/contracts', upload.single('file'), validateExcelFile, (req, res) =
   catch (e) { console.error('[Import] 合同导入失败:', e.message); res.status(500).json({ code: 500, msg: '导入失败' }); }
 });
 
-// POST /api/admin/import/workorders
+// POST /api/admin/import/workorders - 批量导入工单（按order_no覆盖，无order_no则按vin+order_type覆盖）
 router.post('/workorders', upload.single('file'), validateExcelFile, (req, res) => {
   const wb = XLSX.readFile(req.file.path);
   fs.unlink(req.file.path, () => {});
@@ -134,19 +134,42 @@ router.post('/workorders', upload.single('file'), validateExcelFile, (req, res) 
   db.exec('PRAGMA foreign_keys = OFF');
   
   let success = 0, fail = 0;
+  const errors = [];
 
   const tx = db.transaction(() => {
-    for (const r of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       const vin = r['VIN'] || r['vin'];
-      if (!vin) { fail++; continue; }
+      const orderNo = r['工单号'] || r['order_no'] || '';
+      if (!vin) { fail++; errors.push(`第${i + 2}行: 缺少VIN`); continue; }
       try {
-        db.prepare(`INSERT INTO work_orders (vin, order_no, order_date, order_type, order_content, service_dealer, dealer_code, amount) VALUES (?,?,?,?,?,?,?,?)`)
-          .run(vin, r['工单号'] || r['order_no'] || null, r['工单日期'] || r['order_date'] || null, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
+        if (orderNo) {
+          // 有工单号：按order_no匹配覆盖
+          const existing = db.prepare('SELECT id FROM work_orders WHERE order_no = ?').get(orderNo);
+          if (existing) {
+            db.prepare(`UPDATE work_orders SET vin=?, order_date=?, order_type=?, order_content=?, service_dealer=?, dealer_code=?, amount=? WHERE order_no=?`)
+              .run(vin, r['工单日期'] || r['order_date'] || null, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0, orderNo);
+          } else {
+            db.prepare(`INSERT INTO work_orders (vin, order_no, order_date, order_type, order_content, service_dealer, dealer_code, amount) VALUES (?,?,?,?,?,?,?,?)`)
+              .run(vin, orderNo, r['工单日期'] || r['order_date'] || null, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
+          }
+        } else {
+          // 无工单号：按vin+order_type匹配覆盖
+          const orderType = r['工单类型'] || r['order_type'] || '';
+          const existing = db.prepare('SELECT id FROM work_orders WHERE vin = ? AND order_type = ?').get(vin, orderType);
+          if (existing) {
+            db.prepare(`UPDATE work_orders SET order_date=?, order_content=?, service_dealer=?, dealer_code=?, amount=? WHERE id=?`)
+              .run(r['工单日期'] || r['order_date'] || null, r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0, existing.id);
+          } else {
+            db.prepare(`INSERT INTO work_orders (vin, order_no, order_date, order_type, order_content, service_dealer, dealer_code, amount) VALUES (?,?,?,?,?,?,?,?)`)
+              .run(vin, '', r['工单日期'] || r['order_date'] || null, orderType, r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
+          }
+        }
         success++;
-      } catch (e) { fail++; }
+      } catch (e) { fail++; errors.push(`第${i + 2}行: ${e.message}`); }
     }
   });
-  try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail } }); }
+  try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail, errors: errors.slice(0, 20) } }); }
   catch (e) { console.error('[Import] 工单导入失败:', e.message); res.status(500).json({ code: 500, msg: '导入失败' }); }
 });
 

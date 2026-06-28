@@ -70,6 +70,40 @@ router.post('/claim', (req, res) => {
   }
 });
 
+// GET /api/pool/export - 导出公海池列表
+router.get('/export', (req, res) => {
+  const XLSX = require('xlsx');
+  const db = getDb();
+  const { keyword } = req.query;
+  let where = '1=1';
+  const params = [];
+  if (keyword) {
+    where += ' AND (vin LIKE ? OR vin_full LIKE ? OR license_plate LIKE ? OR customer_name LIKE ? OR model LIKE ?)';
+    const k = `%${keyword}%`;
+    params.push(k, k, k, k, k);
+  }
+  const list = db.prepare(`SELECT * FROM public_pool WHERE ${where} ORDER BY created_at DESC`).all(...params);
+  const data = list.map(r => ({
+    'VIN': r.vin,
+    '完整VIN': r.vin_full || '',
+    '车牌': r.license_plate || '',
+    '客户名称': r.customer_name || '',
+    '车辆类型': r.vehicle_type || '',
+    '销售经销商': r.sales_dealer || '',
+    '车型': r.model || '',
+    '交付日期': r.delivery_date || '',
+    '生产日期': r.production_date || '',
+    '创建时间': r.created_at || ''
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, '公海池');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename=pool_${Date.now()}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 // 更新客户汇总字段
 function updateCustomerSummary(db, customerName) {
   const rows = db.prepare(`SELECT DISTINCT sales_dealer, service_dealer FROM vehicles WHERE customer_name = ?`).all(customerName);

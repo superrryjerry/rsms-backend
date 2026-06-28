@@ -168,6 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_activities_user_id ON sales_activities(user
 CREATE INDEX IF NOT EXISTS idx_sales_activities_customer_name ON sales_activities(customer_name);
 CREATE INDEX IF NOT EXISTS idx_contracts_vin ON contracts(vin);
 CREATE INDEX IF NOT EXISTS idx_work_orders_vin ON work_orders(vin);
+CREATE INDEX IF NOT EXISTS idx_work_orders_order_no ON work_orders(order_no);
 CREATE INDEX IF NOT EXISTS idx_leads_target_dealer ON leads(target_dealer);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_sdr_status ON service_dealer_requests(status);
