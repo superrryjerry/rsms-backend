@@ -180,12 +180,12 @@ router.post('/contracts', upload.single('file'), validateExcelFile, (req, res) =
       const vin = cleanVin(r['VIN'] || r['vin']);
       if (!vin) { fail++; errors.push(`第${i + 2}行: 缺少VIN`); continue; }
       try {
-        const startDate = formatDate(r['开始日期'] || r['contract_start_date']);
-        const endDate = formatDate(r['结束日期'] || r['contract_end_date']);
-        const closeDate = formatDate(r['关闭日期'] || r['contract_close_date']);
+        const startDate = formatDate(r['合同开始日期'] || r['开始日期'] || r['contract_start_date']);
+        const endDate = formatDate(r['合同结束日期'] || r['结束日期'] || r['contract_end_date']);
+        const closeDate = formatDate(r['合同结束确定时间'] || r['关闭日期'] || r['contract_close_date']);
         
         db.prepare(`INSERT INTO contracts (vin, contract_start_date, contract_end_date, contract_close_date, contract_set_mileage, mileage_used, contract_total_count, contract_done_count, contract_type, headquarters_contract_no, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(vin, startDate, endDate, closeDate, r['设置里程'] || r['contract_set_mileage'] || 0, r['已用里程'] || r['mileage_used'] || 0, r['总次数'] || r['contract_total_count'] || 0, r['已完成次数'] || r['contract_done_count'] || 0, r['合同类型'] || r['contract_type'] || null, r['总部合同编号'] || r['headquarters_contract_no'] || null, r['状态'] || r['status'] || 'active');
+          .run(vin, startDate, endDate, closeDate, r['合同设置里程'] || r['设置里程'] || r['contract_set_mileage'] || 0, r['已跑完里程'] || r['已用里程'] || r['mileage_used'] || 0, r['合同包含次数'] || r['总次数'] || r['contract_total_count'] || 0, r['合同已完成次数'] || r['已完成次数'] || r['contract_done_count'] || 0, r['合同类型'] || r['contract_type'] || null, r['总部合同编号'] || r['headquarters_contract_no'] || null, r['合同状态'] || r['状态'] || r['status'] || 'active');
         success++;
       } catch (e) { fail++; errors.push(`第${i + 2}行: ${e.message}`); }
     }
@@ -219,7 +219,7 @@ router.post('/workorders', upload.single('file'), validateExcelFile, (req, res) 
       try {
         const orderDate = formatDate(r['工单日期'] || r['order_date']);
         db.prepare(`INSERT INTO work_orders (vin, order_no, order_date, order_type, order_content, service_dealer, dealer_code, amount) VALUES (?,?,?,?,?,?,?,?)`)
-          .run(vin, orderNo, orderDate, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
+          .run(vin, orderNo, orderDate, r['工单类型'] || r['order_type'] || '', r['维修内容'] || r['order_content'] || '', r['经销商名称'] || r['服务经销商'] || r['service_dealer'] || '', r['经销商代码'] || r['dealer_code'] || '', r['金额'] || r['amount'] || 0);
         success++;
       } catch (e) { fail++; errors.push(`第${i + 2}行: ${e.message}`); }
     }
