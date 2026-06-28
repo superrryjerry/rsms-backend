@@ -66,6 +66,38 @@ router.put('/:code', (req, res) => {
   }
 });
 
+// DELETE /api/admin/dealers/:code - 删除经销商
+router.delete('/:code', (req, res) => {
+  const db = getDb();
+  const code = req.params.code;
+  
+  // 检查是否有子经销商
+  const subCount = db.prepare('SELECT COUNT(*) as cnt FROM dealers WHERE parent_dealer_code = ?').get(code);
+  if (subCount.cnt > 0) {
+    return res.status(400).json({ code: 400, msg: '该经销商下有子经销商，无法删除' });
+  }
+  
+  // 检查是否有用户关联
+  const userCount = db.prepare('SELECT COUNT(*) as cnt FROM users WHERE dealer_code = ?').get(code);
+  if (userCount.cnt > 0) {
+    return res.status(400).json({ code: 400, msg: '该经销商下有用户，无法删除' });
+  }
+  
+  // 检查是否有车辆关联
+  const vehicleCount = db.prepare('SELECT COUNT(*) as cnt FROM vehicles WHERE sales_dealer = ? OR service_dealer = ?').get(code, code);
+  if (vehicleCount.cnt > 0) {
+    return res.status(400).json({ code: 400, msg: '该经销商有关联车辆，无法删除' });
+  }
+  
+  try {
+    db.prepare('DELETE FROM dealers WHERE dealer_code = ?').run(code);
+    res.json({ code: 0, msg: '删除成功' });
+  } catch (e) {
+    console.error('[Admin] 删除经销商失败:', e.message);
+    res.status(500).json({ code: 500, msg: '删除失败' });
+  }
+});
+
 // GET /api/admin/dealers/:code/sub-dealers - 获取子经销商列表
 router.get('/:code/sub-dealers', (req, res) => {
   const db = getDb();
