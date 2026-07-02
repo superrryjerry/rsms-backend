@@ -1,7 +1,7 @@
 {
   "name": "rsms-backend",
   "version": "1.0.0",
-  "description": "RSMS 经销商CRM系统后端服务",
+  "description": "小斯的商用车客户跟踪后台后端服务",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
