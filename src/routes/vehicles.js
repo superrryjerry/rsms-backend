@@ -6,22 +6,27 @@ const { updateCustomerSummary } = require('./pool');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET /api/vehicles/list - 全库车辆列表
+// GET /api/vehicles/list - 车辆列表（默认只显示我的车辆，搜索时显示全部）
 router.get('/list', (req, res) => {
-  const { page = 1, size = 20, keyword } = req.query;
+  const { page = 1, size = 20, keyword, scope } = req.query;
   const db = getDb();
+  const dealerCode = req.user.dealer_code;
   let where = '1=1';
   const params = [];
 
+  // 默认只显示我的车辆（有搜索关键词时显示全部）
   if (keyword) {
     where += ' AND (v.vin LIKE ? OR v.vin_full LIKE ? OR v.license_plate LIKE ? OR v.customer_name LIKE ? OR v.model LIKE ? OR v.service_dealer LIKE ?)';
     const k = `%${keyword}%`;
     params.push(k, k, k, k, k, k);
+  } else if (scope !== 'all' && dealerCode) {
+    where += ' AND v.service_dealer = ?';
+    params.push(dealerCode);
   }
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM vehicles v WHERE ${where}`).get(...params).c;
-  const list = db.prepare(`SELECT v.*, CASE WHEN v.service_dealer = ? THEN 1 ELSE 0 END as is_mine FROM vehicles v WHERE ${where} ORDER BY v.updated_at DESC LIMIT ? OFFSET ?`)
-    .all(req.user.dealer_code, ...params, Number(size), (Number(page) - 1) * Number(size));
+  const list = db.prepare(`SELECT v.*, CASE WHEN v.service_dealer = ? THEN 1 ELSE 0 END as is_mine FROM vehicles v WHERE ${where} ORDER BY is_mine DESC, v.updated_at DESC LIMIT ? OFFSET ?`)
+    .all(dealerCode, ...params, Number(size), (Number(page) - 1) * Number(size));
 
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });

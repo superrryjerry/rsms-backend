@@ -5,19 +5,28 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET /api/customers/list
+// GET /api/customers/list - 客户列表（默认只显示我的客户，搜索时显示全部）
 router.get('/list', (req, res) => {
-  const { page = 1, size = 20, keyword } = req.query;
+  const { page = 1, size = 20, keyword, scope } = req.query;
   const db = getDb();
+  const dealerCode = req.user.dealer_code;
   let where = '1=1';
   const params = [];
-  if (keyword) { where += ' AND c.customer_name LIKE ?'; params.push(`%${keyword}%`); }
+
+  // 默认只显示我的客户（service_dealers_summary包含我的经销商code），搜索时显示全部
+  if (keyword) {
+    where += ' AND c.customer_name LIKE ?';
+    params.push(`%${keyword}%`);
+  } else if (scope !== 'all' && dealerCode) {
+    where += ' AND c.service_dealers_summary LIKE ?';
+    params.push(`%${dealerCode}%`);
+  }
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM customers c WHERE ${where}`).get(...params).c;
   const list = db.prepare(`SELECT c.*,
     CASE WHEN EXISTS (SELECT 1 FROM vehicles v WHERE v.customer_name = c.customer_name AND v.service_dealer = ?) THEN 1 ELSE 0 END as is_mine
-    FROM customers c WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
-    .all(req.user.dealer_code, ...params, Number(size), (Number(page) - 1) * Number(size));
+    FROM customers c WHERE ${where} ORDER BY is_mine DESC, c.updated_at DESC LIMIT ? OFFSET ?`)
+    .all(dealerCode, ...params, Number(size), (Number(page) - 1) * Number(size));
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
 

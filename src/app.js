@@ -77,6 +77,7 @@ app.use('/api/auth', loginLimiter, require('./routes/auth'));
 app.use('/api/pool', require('./routes/pool'));
 app.use('/api/vehicles', require('./routes/vehicles'));
 app.use('/api/customers', require('./routes/customers'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/leads', require('./routes/leads'));
 app.use('/api/activities', require('./routes/activities'));
 app.use('/api/contracts', require('./routes/contracts'));
