@@ -87,6 +87,20 @@ router.post('/create', (req, res) => {
   }
 });
 
+// PUT /api/customers/tag - 更新客户标签（小程序专用）
+router.put('/tag', (req, res) => {
+  const { customer_name, tag } = req.body;
+  if (!customer_name) return res.json({ code: 400, msg: '客户名称不能为空' });
+  const db = getDb();
+  try {
+    db.prepare(`UPDATE customers SET tag=?, updated_at=datetime('now') WHERE customer_name=?`)
+      .run(tag || null, customer_name);
+    res.json({ code: 0, msg: '标签更新成功' });
+  } catch (e) {
+    res.json({ code: 500, msg: e.message });
+  }
+});
+
 // PUT /api/customers/update
 router.put('/update', (req, res) => {
   const { customer_name, tag, city, registration_info } = req.body;
