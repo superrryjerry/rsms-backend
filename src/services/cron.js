@@ -48,26 +48,45 @@ function generateLeads() {
   const leadMileageKm = parseInt(configs['lead.mileage_km'] || '80000');
   const leadCountRemain = parseInt(configs['lead.count_remain'] || '3');
 
-  const vehicles = db.prepare('SELECT v.*, c.contract_end_date, c.contract_set_mileage, c.mileage_used, c.contract_total_count, c.contract_done_count FROM vehicles v LEFT JOIN contracts c ON v.vin = c.vin WHERE v.service_dealer IS NOT NULL').all();
+  const vehicles = db.prepare('SELECT v.*, c.contract_end_date, c.contract_set_mileage, c.mileage_used, c.contract_total_count, c.contract_done_count, c.contract_type FROM vehicles v LEFT JOIN contracts c ON v.vin = c.vin INNER JOIN dealers d ON v.service_dealer = d.dealer_code').all();
+
+  // 查询每辆车的Extended Warranty合同（用于质保到期判断）
+  const getExtendedWarranty = db.prepare("SELECT contract_end_date FROM contracts WHERE vin = ? AND contract_type LIKE '%Extended Warranty%' ORDER BY contract_end_date DESC LIMIT 1");
 
   const insertLead = db.prepare("INSERT INTO leads (vin, lead_type, trigger_value, threshold_value, target_dealer, status) SELECT ?, ?, ?, ?, ?, 'unfollowed' WHERE NOT EXISTS (SELECT 1 FROM leads WHERE vin = ? AND lead_type = ? AND target_dealer = ? AND created_at >= datetime('now', '-7 days'))");
 
   let count = 0;
   for (const v of vehicles) {
-    // 质保结束预警
+    // 质保结束预警：优先检查是否有Extended Warranty合同
     if (v.delivery_date) {
-      const warrantyEnd = dayjs(v.delivery_date).add(warrantyMonths, 'month');
-      if (warrantyEnd.isBefore(today) || warrantyEnd.isSame(today, 'day')) {
-        const r = insertLead.run(v.vin, 'warranty_end', v.delivery_date, `${warrantyMonths}个月`, v.service_dealer, v.vin, 'warranty_end', v.service_dealer);
+      const ewContract = getExtendedWarranty.get(v.vin);
+      let warrantyEndDate;
+      let triggerValue;
+      
+      if (ewContract) {
+        // 有延保合同，用延保到期日期
+        warrantyEndDate = dayjs(ewContract.contract_end_date);
+        triggerValue = 'Extended Warranty';
+      } else {
+        // 无延保合同，用原厂质保（交付+11月）
+        warrantyEndDate = dayjs(v.delivery_date).add(warrantyMonths, 'month');
+        triggerValue = v.delivery_date;
+      }
+      
+      const warnDeadline = today.add(leadTimeMonths, 'month');
+      // 质保到期日 >= 今天 且 <= 今天+预警月数 → 即将到期，需要提醒
+      if ((warrantyEndDate.isAfter(today) || warrantyEndDate.isSame(today, 'day')) && warrantyEndDate.isBefore(warnDeadline)) {
+        const r = insertLead.run(v.vin, 'warranty_end', triggerValue, warrantyEndDate.format('YYYY-MM-DD'), v.service_dealer, v.vin, 'warranty_end', v.service_dealer);
         if (r.changes) count++;
       }
     }
     if (!v.contract_end_date) continue;
-    // 合同时间预警
-    const warnDate = dayjs(v.contract_end_date).subtract(0, 'day');
-    const threshold = today.add(leadTimeMonths, 'month');
-    if (dayjs(v.contract_end_date).isBefore(threshold) || dayjs(v.contract_end_date).isSame(threshold, 'day')) {
-      const r = insertLead.run(v.vin, 'contract_time', v.contract_end_date, `${leadTimeMonths}个月`, v.service_dealer, v.vin, 'contract_time', v.service_dealer);
+    // 合同时间预警：只预警【未来】即将到期的（合同结束日期在今天之后、且在预警窗口内）
+    const contractEnd = dayjs(v.contract_end_date);
+    const contractWarnDeadline = today.add(leadTimeMonths, 'month');
+    // 合同结束日期 >= 今天 且 <= 今天+预警月数 → 即将到期，需要提醒
+    if ((contractEnd.isAfter(today) || contractEnd.isSame(today, 'day')) && contractEnd.isBefore(contractWarnDeadline)) {
+      const r = insertLead.run(v.vin, 'contract_time', v.contract_type || '', v.contract_end_date, v.service_dealer, v.vin, 'contract_time', v.service_dealer);
       if (r.changes) count++;
     }
     // 合同里程预警

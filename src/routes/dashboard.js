@@ -32,27 +32,27 @@ router.get('/', (req, res) => {
     ? db.prepare("SELECT COUNT(*) as c FROM customers WHERE service_dealers_summary LIKE ?").get(`%${dealerCode}%`).c
     : 0;
 
-  // 不活跃车辆数（我的车辆中，最近30天没有销售活动的）
+  // 不活跃车辆数（我的车辆中，8个月内没有工单的）
   let inactiveVehicleCount = 0;
   if (dealerCode) {
     const myVins = db.prepare('SELECT vin FROM vehicles WHERE service_dealer = ?').all(dealerCode).map(v => v.vin);
     if (myVins.length > 0) {
       const placeholders = myVins.map(() => '?').join(',');
       const activeVins = db.prepare(
-        `SELECT DISTINCT vin FROM sales_activities WHERE vin IN (${placeholders}) AND created_at >= datetime('now', '-30 days')`
+        `SELECT DISTINCT vin FROM work_orders WHERE vin IN (${placeholders}) AND order_date >= datetime('now', '-8 months')`
       ).all(...myVins).map(a => a.vin);
       inactiveVehicleCount = myVins.length - activeVins.length;
     }
   }
 
-  // 不活跃客户数（我的客户中，最近30天没有销售活动的）
+  // 不活跃客户数（我的客户中，8个月内所有名下车辆都没有工单的）
   let inactiveCustomerCount = 0;
   if (dealerCode) {
     const myCustomers = db.prepare("SELECT customer_name FROM customers WHERE service_dealers_summary LIKE ?").all(`%${dealerCode}%`).map(c => c.customer_name);
     if (myCustomers.length > 0) {
       const placeholders = myCustomers.map(() => '?').join(',');
       const activeCustomers = db.prepare(
-        `SELECT DISTINCT customer_name FROM sales_activities WHERE customer_name IN (${placeholders}) AND created_at >= datetime('now', '-30 days')`
+        `SELECT DISTINCT v.customer_name FROM work_orders w JOIN vehicles v ON w.vin = v.vin WHERE v.customer_name IN (${placeholders}) AND w.order_date >= datetime('now', '-8 months')`
       ).all(...myCustomers).map(c => c.customer_name);
       inactiveCustomerCount = myCustomers.length - activeCustomers.length;
     }
