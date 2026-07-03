@@ -14,33 +14,38 @@ const upload = multer({ dest: path.join(__dirname, '../../uploads/temp') });
 
 // GET /api/admin/customer-tags/list - 客户标签列表
 router.get('/list', (req, res) => {
-  const { page = 1, size = 20, keyword, tag } = req.query;
-  const db = getDb();
-  let where = 'c.tag IS NOT NULL AND c.tag != ""';
-  const params = [];
+  try {
+    const { page = 1, size = 20, keyword, tag } = req.query;
+    const db = getDb();
+    let where = "c.tag IS NOT NULL AND c.tag != ''";
+    const params = [];
 
-  if (keyword) {
-    where += ' AND c.customer_name LIKE ?';
-    params.push(`%${keyword}%`);
+    if (keyword) {
+      where += ' AND c.customer_name LIKE ?';
+      params.push(`%${keyword}%`);
+    }
+    if (tag) {
+      where += ' AND c.tag = ?';
+      params.push(tag);
+    }
+
+    const total = db.prepare(`SELECT COUNT(*) as c FROM customers c WHERE ${where}`).get(...params).c;
+    const list = db.prepare(`SELECT c.rowid as id, c.customer_name, c.tag, c.city, c.service_dealers_summary, c.updated_at
+      FROM customers c WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, Number(size), (Number(page) - 1) * Number(size));
+
+    res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
+  } catch (err) {
+    console.error('[CustomerTags List Error]', err.message, err.stack);
+    res.status(500).json({ code: 500, msg: err.message });
   }
-  if (tag) {
-    where += ' AND c.tag = ?';
-    params.push(tag);
-  }
-
-  const total = db.prepare(`SELECT COUNT(*) as c FROM customers c WHERE ${where}`).get(...params).c;
-  const list = db.prepare(`SELECT c.rowid as id, c.customer_name, c.tag, c.city, c.service_dealers_summary, c.updated_at
-    FROM customers c WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
-    .all(...params, Number(size), (Number(page) - 1) * Number(size));
-
-  res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
 
 // GET /api/admin/customer-tags/export - 导出客户标签
 router.get('/export', (req, res) => {
   const { keyword, tag } = req.query;
   const db = getDb();
-  let where = 'c.tag IS NOT NULL AND c.tag != ""';
+  let where = "c.tag IS NOT NULL AND c.tag != ''";
   const params = [];
 
   if (keyword) {
