@@ -29,20 +29,11 @@ router.get('/list', (req, res) => {
   }
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM customers c WHERE ${where}`).get(...params).c;
-  const list = db.prepare(`SELECT c.rowid as id, c.customer_name, c.tag, c.city, c.service_dealers_summary, c.updated_at,
-    (SELECT dealer_code FROM users WHERE dealer_code IN (SELECT dealer_code FROM dealers WHERE level = 1) LIMIT 1) as dealer_code
+  const list = db.prepare(`SELECT c.rowid as id, c.customer_name, c.tag, c.city, c.service_dealers_summary, c.updated_at
     FROM customers c WHERE ${where} ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`)
     .all(...params, Number(size), (Number(page) - 1) * Number(size));
 
-  // 获取实际的经销商代码
-  const result = list.map(item => {
-    const dealer = db.prepare(`SELECT u.dealer_code FROM users u
-      JOIN dealers d ON u.dealer_code = d.dealer_code
-      WHERE d.level = 1 LIMIT 1`).get();
-    return { ...item, dealer_code: dealer?.dealer_code || '-' };
-  });
-
-  res.json({ code: 0, data: { total, list: result, page: Number(page), size: Number(size) } });
+  res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
 
 // GET /api/admin/customer-tags/export - 导出客户标签
