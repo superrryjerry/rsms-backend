@@ -12,5 +12,6 @@ router.use('/dealers', require('./admin/dealers'));
 router.use('/import', require('./admin/import'));
 router.use('/templates', require('./admin/templates'));
 router.use('/activities', require('./admin/activities'));
+router.use('/customer-tags', require('./admin/customer-tags'));
 
 module.exports = router;
