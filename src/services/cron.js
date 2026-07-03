@@ -29,11 +29,16 @@ function refreshContractStatus() {
 
   const warnDate = dayjs().add(warnMonths, 'month').format('YYYY-MM-DD');
 
-  db.prepare("UPDATE contracts SET status='expired', updated_at=datetime('now') WHERE contract_end_date < ? AND status != 'expired'").run(today);
+  // 合同过期判断：contract_close_date有日期且早于今天=expired
+  db.prepare("UPDATE contracts SET status='expired', updated_at=datetime('now') WHERE contract_close_date IS NOT NULL AND contract_close_date != 'ing' AND contract_close_date < ? AND status != 'expired'").run(today);
+  // 里程或次数用完也=expired
   db.prepare("UPDATE contracts SET status='expired', updated_at=datetime('now') WHERE (contract_set_mileage - mileage_used <= 0 OR contract_total_count - contract_done_count <= 0) AND status != 'expired'").run();
+  // 时间预警：contract_end_date在预警窗口内
   db.prepare("UPDATE contracts SET status='warning', updated_at=datetime('now') WHERE contract_end_date <= ? AND contract_end_date >= ? AND status = 'active'").run(warnDate, today);
-  db.prepare("UPDATE contracts SET status='warning', updated_at=datetime('now') WHERE (contract_set_mileage - mileage_used <= ? AND contract_set_mileage - mileage_used > 0) AND status = 'active'").run(leadMileageKm);
-  db.prepare("UPDATE contracts SET status='warning', updated_at=datetime('now') WHERE (contract_total_count - contract_done_count <= ? AND contract_total_count - contract_done_count > 0) AND status = 'active'").run(leadCountRemain);
+  // 里程预警：剩余里程<=阈值且>0，且合同未过期（contract_close_date不是已过期日期）
+  db.prepare("UPDATE contracts SET status='warning', updated_at=datetime('now') WHERE (contract_set_mileage - mileage_used <= ? AND contract_set_mileage - mileage_used > 0) AND status = 'active' AND (contract_close_date IS NULL OR contract_close_date = 'ing' OR contract_close_date >= ?)").run(leadMileageKm, today);
+  // 次数预警：剩余次数<=阈值且>0，且合同未过期
+  db.prepare("UPDATE contracts SET status='warning', updated_at=datetime('now') WHERE (contract_total_count - contract_done_count <= ? AND contract_total_count - contract_done_count > 0) AND status = 'active' AND (contract_close_date IS NULL OR contract_close_date = 'ing' OR contract_close_date >= ?)").run(leadCountRemain, today);
   console.log('[Cron] 合同状态刷新完成');
 }
 
@@ -89,17 +94,23 @@ function generateLeads() {
       const r = insertLead.run(v.vin, 'contract_time', v.contract_type || '', v.contract_end_date, v.service_dealer, v.vin, 'contract_time', v.service_dealer);
       if (r.changes) count++;
     }
-    // 合同里程预警
-    const remainMileage = (v.contract_set_mileage || 0) - (v.mileage_used || 0);
-    if (remainMileage <= leadMileageKm && remainMileage > 0) {
-      const r = insertLead.run(v.vin, 'contract_mileage', String(remainMileage), `${leadMileageKm}km`, v.service_dealer, v.vin, 'contract_mileage', v.service_dealer);
-      if (r.changes) count++;
+    // 合同里程预警 - 先检查合同是否已过期
+    // contract_close_date有日期且早于今天=已过期，不产生线索
+    const isContractExpired = v.contract_close_date && v.contract_close_date !== 'ing' && dayjs(v.contract_close_date).isBefore(today, 'day');
+    if (!isContractExpired) {
+      const remainMileage = (v.contract_set_mileage || 0) - (v.mileage_used || 0);
+      if (remainMileage <= leadMileageKm && remainMileage > 0) {
+        const r = insertLead.run(v.vin, 'contract_mileage', String(remainMileage), `${leadMileageKm}km`, v.service_dealer, v.vin, 'contract_mileage', v.service_dealer);
+        if (r.changes) count++;
+      }
     }
-    // 合同次数预警
-    const remainCount = (v.contract_total_count || 0) - (v.contract_done_count || 0);
-    if (remainCount <= leadCountRemain && remainCount > 0) {
-      const r = insertLead.run(v.vin, 'contract_count', String(remainCount), `${leadCountRemain}次`, v.service_dealer, v.vin, 'contract_count', v.service_dealer);
-      if (r.changes) count++;
+    // 合同次数预警 - 同样先检查合同是否已过期
+    if (!isContractExpired) {
+      const remainCount = (v.contract_total_count || 0) - (v.contract_done_count || 0);
+      if (remainCount <= leadCountRemain && remainCount > 0) {
+        const r = insertLead.run(v.vin, 'contract_count', String(remainCount), `${leadCountRemain}次`, v.service_dealer, v.vin, 'contract_count', v.service_dealer);
+        if (r.changes) count++;
+      }
     }
   }
   console.log(`[Cron] 线索生成完成，新增 ${count} 条`);

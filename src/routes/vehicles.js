@@ -6,6 +6,13 @@ const { updateCustomerSummary } = require('./pool');
 const router = express.Router();
 router.use(authMiddleware);
 
+// GET /api/vehicles/dealer-list - 获取经销商列表（用于转移功能）
+router.get('/dealer-list', (req, res) => {
+  const db = getDb();
+  const dealers = db.prepare('SELECT dealer_code, dealer_name FROM dealers ORDER BY dealer_code').all();
+  res.json({ code: 0, data: dealers });
+});
+
 // GET /api/vehicles/list - 车辆列表（默认只显示我的车辆，搜索时显示全部）
 router.get('/list', (req, res) => {
   const { page = 1, size = 20, keyword, scope } = req.query;
