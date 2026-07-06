@@ -22,6 +22,16 @@ router.post('/login', (req, res) => {
   const payload = { id: user.id, phone: user.phone, dealer_code: user.dealer_code, role: user.role };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 
+  // 记录登录日志
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || '';
+    const ua = req.headers['user-agent'] || '';
+    db.prepare('INSERT INTO login_logs (user_id, phone, ip_address, user_agent, status) VALUES (?, ?, ?, ?, ?)')
+      .run(user.id, user.phone, ip, ua, 'success');
+  } catch (e) {
+    console.error('[Auth] 记录登录日志失败:', e.message);
+  }
+
   res.json({
     code: 0,
     data: {

@@ -13,5 +13,6 @@ router.use('/import', require('./admin/import'));
 router.use('/templates', require('./admin/templates'));
 router.use('/activities', require('./admin/activities'));
 router.use('/customer-tags', require('./admin/customer-tags'));
+router.use('/login-logs', require('./admin/login-logs'));
 
 module.exports = router;

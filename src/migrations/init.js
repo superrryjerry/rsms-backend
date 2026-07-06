@@ -80,3 +80,27 @@ try {
 }
 
 console.log('数据库初始化完成');
+
+// 登录日志表迁移
+try {
+  const loginLogsInfo = db.prepare('PRAGMA table_info(login_logs)').all();
+  if (loginLogsInfo.length === 0) {
+    db.exec(`
+      CREATE TABLE login_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        phone VARCHAR(16),
+        login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        ip_address VARCHAR(64),
+        user_agent TEXT,
+        status VARCHAR(16) DEFAULT 'success',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_login_logs_phone ON login_logs(phone);
+      CREATE INDEX IF NOT EXISTS idx_login_logs_login_time ON login_logs(login_time);
+    `);
+    console.log('[Migration] Created login_logs table');
+  }
+} catch (e) {
+  console.log('[Migration] login_logs table skipped:', e.message);
+}
