@@ -9,6 +9,17 @@ const crypto = require('crypto');
 const { getDb } = require('./config/db');
 const { initCron } = require('./services/cron');
 
+// ========== 安全检查：强制配置 JWT_SECRET ==========
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'rsms-change-this-to-a-strong-random-string-in-production') {
+  console.error('========================================');
+  console.error('❌ 安全错误：JWT_SECRET 未配置或使用了默认值！');
+  console.error('请在 .env 文件中设置一个强随机字符串：');
+  console.error('  JWT_SECRET=' + crypto.randomBytes(32).toString('hex'));
+  console.error('========================================');
+  process.exit(1);
+}
+// ========== 安全检查 END ==========
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -49,6 +60,13 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 require('./migrations/init');
 const db = getDb();
 
+// 确保 users 表有 must_change_pwd 字段（兼容旧数据库，必须在创建管理员之前）
+try {
+  db.prepare('SELECT must_change_pwd FROM users LIMIT 1').get();
+} catch {
+  db.exec('ALTER TABLE users ADD COLUMN must_change_pwd INTEGER DEFAULT 0');
+}
+
 // 创建默认管理员（随机密码，首次登录需修改）
 const bcrypt = require('bcryptjs');
 const adminExists = db.prepare("SELECT id FROM users WHERE phone = 'admin'").get();
@@ -63,13 +81,6 @@ if (!adminExists) {
   console.log(`  密码: ${defaultPassword}`);
   console.log('  首次登录需修改密码，请妥善保存！');
   console.log('========================================');
-}
-
-// 确保 users 表有 must_change_pwd 字段（兼容旧数据库）
-try {
-  db.prepare('SELECT must_change_pwd FROM users LIMIT 1').get();
-} catch {
-  db.exec('ALTER TABLE users ADD COLUMN must_change_pwd INTEGER DEFAULT 0');
 }
 
 // 路由
