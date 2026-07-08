@@ -9,14 +9,21 @@ router.use(authMiddleware);
 router.get('/list', (req, res) => {
   const { page = 1, size = 20, lead_type, status } = req.query;
   const db = getDb();
-  let where = 'target_dealer = ?';
-  const params = [req.user.dealer_code];
+  let where = 'target_dealer = ? AND status != ?';
+  const params = [req.user.dealer_code, 'ignored'];
 
   if (lead_type) { where += ' AND lead_type = ?'; params.push(lead_type); }
   if (status) { where += ' AND status = ?'; params.push(status); }
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM leads WHERE ${where}`).get(...params).c;
-  const list = db.prepare(`SELECT * FROM leads WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+  // 按状态优先级排序：unfollowed > following > completed，同状态内按时间倒序
+  const list = db.prepare(`SELECT * FROM leads WHERE ${where} ORDER BY 
+    CASE status 
+      WHEN 'unfollowed' THEN 1 
+      WHEN 'following' THEN 2 
+      WHEN 'completed' THEN 3 
+      ELSE 4 
+    END, created_at DESC LIMIT ? OFFSET ?`)
     .all(...params, Number(size), (Number(page) - 1) * Number(size));
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
@@ -40,7 +47,7 @@ router.post('/:id/read', (req, res) => {
 // PUT /api/leads/:id/status - 更新线索状态
 router.put('/:id/status', (req, res) => {
   const { status } = req.body;
-  const validStatuses = ['unfollowed', 'following', 'completed'];
+  const validStatuses = ['unfollowed', 'following', 'completed', 'ignored'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ code: 400, msg: '无效的状态值' });
   }
@@ -54,7 +61,7 @@ router.put('/:id/status', (req, res) => {
   db.prepare("UPDATE leads SET status = ?, read_at = datetime('now') WHERE id = ?")
     .run(status, req.params.id);
   
-  const statusMap = { unfollowed: '未跟进', following: '跟进中', completed: '已结束' };
+  const statusMap = { unfollowed: '未跟进', following: '跟进中', completed: '已结束', ignored: '已忽略' };
   res.json({ code: 0, msg: `状态已更新为${statusMap[status]}` });
 });
 
