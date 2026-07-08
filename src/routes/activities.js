@@ -39,9 +39,32 @@ const upload = multer({
 router.get('/list', (req, res) => {
   const { page = 1, size = 20 } = req.query;
   const db = getDb();
-  const total = db.prepare('SELECT COUNT(*) as c FROM sales_activities WHERE user_id = ?').get(req.user.id).c;
-  const list = db.prepare('SELECT * FROM sales_activities WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
-    .all(req.user.id, Number(size), (Number(page) - 1) * Number(size));
+
+  // 按经销商层级查询：一级经销商可看自己+子经销商的活动，二级只看自己的
+  const userDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(req.user.dealer_code);
+  let userIds = [];
+
+  if (userDealer && userDealer.level === 1) {
+    // 一级经销商：查自己 + 所有子经销商的用户
+    const subDealers = db.prepare('SELECT dealer_code FROM dealers WHERE parent_dealer_code = ?')
+      .all(req.user.dealer_code);
+    const allDealerCodes = [req.user.dealer_code, ...subDealers.map(d => d.dealer_code)];
+    userIds = db.prepare(`SELECT id FROM users WHERE dealer_code IN (${allDealerCodes.map(() => '?').join(',')})`)
+      .all(...allDealerCodes).map(u => u.id);
+  }
+
+  let where, params;
+  if (userIds.length > 0) {
+    where = `user_id IN (${userIds.map(() => '?').join(',')})`;
+    params = [...userIds];
+  } else {
+    where = 'user_id = ?';
+    params = [req.user.id];
+  }
+
+  const total = db.prepare(`SELECT COUNT(*) as c FROM sales_activities WHERE ${where}`).get(...params).c;
+  const list = db.prepare(`SELECT * FROM sales_activities WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(...params, Number(size), (Number(page) - 1) * Number(size));
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
 
