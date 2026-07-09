@@ -45,3 +45,4 @@ uploads/
 # Test files
 test.js
 test_*.js
+data/*.db*
