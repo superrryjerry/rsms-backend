@@ -68,8 +68,10 @@ router.get('/detail/:name', (req, res) => {
   const contracts = vins.length ? db.prepare(`SELECT * FROM contracts WHERE vin IN (${vins.map(() => '?').join(',')})`).all(...vins) : [];
   const workOrders = vins.length ? db.prepare(`SELECT * FROM work_orders WHERE vin IN (${vins.map(() => '?').join(',')}) ORDER BY order_date DESC`).all(...vins) : [];
 
-  // 计算年总收入汇总
-  const totalAnnualIncome = vehicles.reduce((sum, v) => sum + (v.annual_income || 0), 0);
+  // 计算年总收入汇总（按当前登录经销商筛选）
+    const dealerCode = req.user.dealer_code;
+    const totalAnnualIncome = vehicles.filter(v => v.service_dealer === dealerCode)
+      .reduce((sum, v) => sum + (v.annual_income || 0), 0);
 
   // 销售活动：根据经销商层级查询
   // 1. 获取当前用户的经销商信息

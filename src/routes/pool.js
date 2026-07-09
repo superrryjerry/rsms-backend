@@ -25,6 +25,28 @@ router.get('/list', (req, res) => {
   res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
 });
 
+// GET /api/pool/detail/:vin - 公海池车辆详情
+router.get('/detail/:vin', (req, res) => {
+  const db = getDb();
+  const vin = req.params.vin;
+  
+  const vehicle = db.prepare('SELECT * FROM public_pool WHERE vin = ?').get(vin);
+  if (!vehicle) return res.status(404).json({ code: 404, msg: '公海池中不存在该VIN' });
+  
+  // 计算车龄
+  let vehicleAge = null;
+  if (vehicle.production_date) {
+    const prodDate = new Date(vehicle.production_date);
+    const now = new Date();
+    const years = Math.floor((now - prodDate) / (365.25 * 24 * 60 * 60 * 1000));
+    const months = Math.floor(((now - prodDate) % (365.25 * 24 * 60 * 60 * 1000)) / (30.44 * 24 * 60 * 60 * 1000));
+    vehicleAge = years > 0 ? `${years}年${months}个月` : `${months}个月`;
+  }
+  
+  // 返回详情（包含车龄计算）
+  res.json({ code: 0, data: { ...vehicle, vehicle_age: vehicleAge } });
+});
+
 // POST /api/pool/claim - 认领车辆
 router.post('/claim', (req, res) => {
   const { vin, service_dealer } = req.body;
