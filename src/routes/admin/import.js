@@ -68,6 +68,17 @@ function formatDate(value) {
   return str;
 }
 
+// 辅助函数：计算车龄（基于生产日期）
+function calcVehicleAge(productionDate) {
+  if (!productionDate) return null;
+  const prodDate = new Date(productionDate);
+  const now = new Date();
+  if (isNaN(prodDate.getTime())) return null;
+  const years = Math.floor((now - prodDate) / (365.25 * 24 * 60 * 60 * 1000));
+  const months = Math.floor(((now - prodDate) % (365.25 * 24 * 60 * 60 * 1000)) / (30.44 * 24 * 60 * 60 * 1000));
+  return years > 0 ? `${years}年${months}个月` : `${months}个月`;
+}
+
 // POST /api/admin/import/pool - 公海池导入（先清零再导入）
 router.post('/pool', upload.single('file'), validateExcelFile, (req, res) => {
   const wb = XLSX.readFile(req.file.path, { cellDates: true });
@@ -86,21 +97,22 @@ router.post('/pool', upload.single('file'), validateExcelFile, (req, res) => {
     db.exec('DELETE FROM public_pool');
     
     for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const vin = cleanVin(r['VIN'] || r['vin']);
-      if (!vin) { fail++; errors.push(`第${i + 2}行: 缺少VIN`); continue; }
-      try {
-        const vinFull = cleanVin(r['VIN全称'] || r['VIN_FULL'] || r['vin_full']) || vin;
-        const deliveryDate = formatDate(r['交付日期'] || r['delivery_date']);
-        const productionDate = formatDate(r['生产日期'] || r['production_date']);
-        db.prepare(`INSERT INTO public_pool (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, model, delivery_date, production_date)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(vin, vinFull, r['车牌'] || r['license_plate'] || '', r['客户名称'] || r['customer_name'] || '',
-            r['车辆类型'] || r['vehicle_type'] || '', r['销售经销商'] || r['sales_dealer'] || '', r['车型'] || r['model'] || '',
-            deliveryDate, productionDate);
-        success++;
-      } catch (e) { fail++; errors.push(`第${i + 2}行: ${e.message}`); }
-    }
+          const r = rows[i];
+          const vin = cleanVin(r['VIN'] || r['vin']);
+          if (!vin) { fail++; errors.push(`第${i + 2}行: 缺少VIN`); continue; }
+          try {
+            const vinFull = cleanVin(r['VIN全称'] || r['VIN_FULL'] || r['vin_full']) || vin;
+            const deliveryDate = formatDate(r['交付日期'] || r['delivery_date']);
+            const productionDate = formatDate(r['生产日期'] || r['production_date']);
+            const vehicleAge = calcVehicleAge(productionDate);
+            db.prepare(`INSERT INTO public_pool (vin, vin_full, license_plate, customer_name, vehicle_type, sales_dealer, model, delivery_date, production_date, vehicle_age)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              .run(vin, vinFull, r['车牌'] || r['license_plate'] || '', r['客户名称'] || r['customer_name'] || '',
+                r['车辆类型'] || r['vehicle_type'] || '', r['销售经销商'] || r['sales_dealer'] || '', r['车型'] || r['model'] || '',
+                deliveryDate, productionDate, vehicleAge);
+            success++;
+          } catch (e) { fail++; errors.push(`第${i + 2}行: ${e.message}`); }
+        }
   });
   try { tx(); res.json({ code: 0, data: { total: rows.length, success, fail, errors: errors.slice(0, 20) } }); }
   catch (e) { console.error('[Import] 公海池导入失败:', e.message); res.status(500).json({ code: 500, msg: '导入失败: ' + e.message }); }
