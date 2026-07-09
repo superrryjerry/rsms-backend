@@ -122,7 +122,7 @@ router.post('/change-password', authMiddleware, (req, res) => {
   }
 
   const hash = bcrypt.hashSync(new_password, 10);
-  db.prepare('UPDATE users SET password_hash = ?, must_change_pwd = 0, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE users SET password_hash = ?, must_change_pwd = 0, updated_at = datetime('now') WHERE id = ?")
     .run(hash, req.user.id);
 
   res.json({ code: 0, msg: '密码修改成功' });
