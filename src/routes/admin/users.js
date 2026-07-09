@@ -13,16 +13,19 @@ router.get('/', (req, res) => {
 
 // POST /api/admin/users
 router.post('/', (req, res) => {
-  const { phone, name, password, dealer_code } = req.body;
+  const { phone, name, password, dealer_code, role } = req.body;
   if (!phone || !name || !password) return res.status(400).json({ code: 400, msg: '必填字段缺失' });
   if (password.length < 8) return res.status(400).json({ code: 400, msg: '密码至少8位' });
   const db = getDb();
   const hash = bcrypt.hashSync(password, 10);
+  // 允许的角色：dealer_staff（默认）、admin_test、admin
+  const validRoles = ['dealer_staff', 'admin_test', 'admin'];
+  const userRole = validRoles.includes(role) ? role : 'dealer_staff';
   try {
-    db.prepare('INSERT INTO users (phone, password_hash, name, dealer_code) VALUES (?, ?, ?, ?)').run(phone, hash, name, dealer_code);
+    db.prepare('INSERT INTO users (phone, password_hash, name, dealer_code, role) VALUES (?, ?, ?, ?, ?)').run(phone, hash, name, dealer_code, userRole);
     res.json({ code: 0, msg: '用户创建成功' });
   } catch (e) {
-    if (e.message.includes('UNIQUE')) return res.status(400).json({ code: 400, msg: '手机号已存在' });
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ code: 400, msg: '账号已存在' });
     console.error('[Admin] 创建用户失败:', e.message);
     res.status(500).json({ code: 500, msg: '创建用户失败' });
   }

@@ -19,9 +19,9 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// 管理员权限中间件
+// 管理员权限中间件（admin 和 admin_test 都可以访问）
 function adminOnly(req, res, next) {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.role !== 'admin_test') {
     return res.status(403).json({ code: 403, msg: '需要管理员权限' });
   }
   next();
