@@ -47,10 +47,30 @@ router.get('/detail/:vin', (req, res) => {
   const contracts = db.prepare('SELECT * FROM contracts WHERE vin = ?').all(req.params.vin);
   const workOrders = db.prepare('SELECT * FROM work_orders WHERE vin = ? ORDER BY order_date DESC').all(req.params.vin);
 
+  // 计算车龄
+  const baseDate = vehicle.production_date || vehicle.delivery_date;
+  let vehicleAge = '-';
+  if (baseDate) {
+    const start = new Date(baseDate);
+    const now = new Date();
+    const years = now.getFullYear() - start.getFullYear();
+    const months = now.getMonth() - start.getMonth();
+    const totalMonths = years * 12 + months;
+    if (totalMonths < 0) {
+      vehicleAge = '-';
+    } else if (totalMonths < 12) {
+      vehicleAge = totalMonths + '个月';
+    } else {
+      const y = Math.floor(totalMonths / 12);
+      const m = totalMonths % 12;
+      vehicleAge = y + '年' + (m > 0 ? m + '个月' : '');
+    }
+  }
+
   // 管理员或无归属经销商的用户可查看所有车辆
   const permission = (req.user.role === 'admin' || !req.user.dealer_code || vehicle.service_dealer === req.user.dealer_code) ? 'editable' : 'readonly';
 
-  res.json({ code: 0, data: { ...vehicle, permission, contracts, work_orders: workOrders } });
+  res.json({ code: 0, data: { ...vehicle, vehicle_age: vehicleAge, permission, contracts, work_orders: workOrders } });
 });
 
 // POST /api/vehicles/drop - 丢公海池（需归属权）

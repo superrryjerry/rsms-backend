@@ -5,6 +5,33 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
+// GET /api/customers/search - 搜索客户名称（用于销售活动选择客户）
+router.get('/search', (req, res) => {
+  const { keyword } = req.query;
+  const db = getDb();
+  const dealerCode = req.user.dealer_code;
+
+  let where = '1=1';
+  const params = [];
+
+  // 搜索关键词
+  if (keyword && keyword.trim()) {
+    where += ' AND customer_name LIKE ?';
+    params.push(`%${keyword.trim()}%`);
+  }
+
+  // 只返回当前经销商有权限的客户（service_dealers_summary包含自己的code）
+  if (dealerCode) {
+    where += ' AND service_dealers_summary LIKE ?';
+    params.push(`%${dealerCode}%`);
+  }
+
+  const list = db.prepare(`SELECT customer_name FROM customers WHERE ${where} ORDER BY customer_name LIMIT 20`)
+    .all(...params);
+
+  res.json({ code: 0, data: list.map(c => c.customer_name) });
+});
+
 // GET /api/customers/list - 客户列表（默认只显示我的客户，搜索时显示全部）
 router.get('/list', (req, res) => {
   const { page = 1, size = 20, keyword, scope } = req.query;
@@ -41,6 +68,9 @@ router.get('/detail/:name', (req, res) => {
   const contracts = vins.length ? db.prepare(`SELECT * FROM contracts WHERE vin IN (${vins.map(() => '?').join(',')})`).all(...vins) : [];
   const workOrders = vins.length ? db.prepare(`SELECT * FROM work_orders WHERE vin IN (${vins.map(() => '?').join(',')}) ORDER BY order_date DESC`).all(...vins) : [];
 
+  // 计算年总收入汇总
+  const totalAnnualIncome = vehicles.reduce((sum, v) => sum + (v.annual_income || 0), 0);
+
   // 销售活动：根据经销商层级查询
   // 1. 获取当前用户的经销商信息
   const userDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(req.user.dealer_code);
@@ -69,7 +99,7 @@ router.get('/detail/:name', (req, res) => {
   // 判断是否有权新增活动
   const canAddActivity = vehicles.some(v => v.service_dealer === req.user.dealer_code);
 
-  res.json({ code: 0, data: { ...customer, vehicles, contracts, work_orders: workOrders, activities, can_add_activity: canAddActivity } });
+  res.json({ code: 0, data: { ...customer, vehicles, contracts, work_orders: workOrders, activities, can_add_activity: canAddActivity, total_annual_income: totalAnnualIncome } });
 });
 
 // POST /api/customers/create
