@@ -33,20 +33,25 @@ router.post('/', (req, res) => {
 
 // POST /api/admin/users/:id/reset - 管理员重置用户密码（不需要旧密码）
 router.post('/:id/reset', (req, res) => {
-  const { new_password } = req.body;
-  if (!new_password) {
-    return res.status(400).json({ code: 400, msg: '新密码不能为空' });
+  try {
+    const { new_password } = req.body;
+    if (!new_password) {
+      return res.status(400).json({ code: 400, msg: '新密码不能为空' });
+    }
+    if (new_password.length < 8) {
+      return res.status(400).json({ code: 400, msg: '新密码至少8位' });
+    }
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ code: 404, msg: '用户不存在' });
+    const hash = bcrypt.hashSync(new_password, 10);
+    db.prepare('UPDATE users SET password_hash = ?, must_change_pwd = 1, updated_at = datetime("now") WHERE id = ?')
+      .run(hash, req.params.id);
+    res.json({ code: 0, msg: '密码已重置' });
+  } catch (e) {
+    console.error('[Admin] 重置密码失败:', e.message);
+    res.status(500).json({ code: 500, msg: '重置密码失败: ' + e.message });
   }
-  if (new_password.length < 8) {
-    return res.status(400).json({ code: 400, msg: '新密码至少8位' });
-  }
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).json({ code: 404, msg: '用户不存在' });
-  const hash = bcrypt.hashSync(new_password, 10);
-  db.prepare('UPDATE users SET password_hash = ?, must_change_pwd = 1, updated_at = datetime("now") WHERE id = ?')
-    .run(hash, req.params.id);
-  res.json({ code: 0, msg: '密码已重置' });
 });
 
 // POST /api/admin/users/:id/toggle
