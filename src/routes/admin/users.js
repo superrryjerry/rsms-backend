@@ -45,7 +45,7 @@ router.post('/:id/reset', (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!user) return res.status(404).json({ code: 404, msg: '用户不存在' });
     const hash = bcrypt.hashSync(new_password, 10);
-    db.prepare('UPDATE users SET password_hash = ?, must_change_pwd = 1, updated_at = datetime("now") WHERE id = ?')
+    db.prepare("UPDATE users SET password_hash = ?, must_change_pwd = 1, updated_at = datetime('now') WHERE id = ?")
       .run(hash, req.params.id);
     res.json({ code: 0, msg: '密码已重置' });
   } catch (e) {
