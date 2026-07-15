@@ -104,3 +104,30 @@ try {
 } catch (e) {
   console.log('[Migration] login_logs table skipped:', e.message);
 }
+
+// 客户标签关联表迁移（支持按经销商隔离）
+try {
+  const customerTagsInfo = db.prepare('PRAGMA table_info(customer_tags)').all();
+  if (customerTagsInfo.length === 0) {
+    db.exec(`
+      CREATE TABLE customer_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name VARCHAR(128) NOT NULL,
+        dealer_code VARCHAR(32) NOT NULL,
+        tag VARCHAR(32) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(customer_name, dealer_code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_customer_tags_customer ON customer_tags(customer_name);
+      CREATE INDEX IF NOT EXISTS idx_customer_tags_dealer ON customer_tags(dealer_code);
+    `);
+    console.log('[Migration] Created customer_tags table');
+    
+    // 迁移现有 customers.tag 数据到 customer_tags 表
+    // 由于不知道原始打标签的经销商，这里不自动迁移
+    // 新逻辑：每个经销商需要重新给客户打标签
+  }
+} catch (e) {
+  console.log('[Migration] customer_tags table skipped:', e.message);
+}
