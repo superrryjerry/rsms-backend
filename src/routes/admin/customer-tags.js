@@ -47,9 +47,10 @@ router.get('/list', (req, res) => {
     }
 
     const total = db.prepare(`SELECT COUNT(*) as c FROM customer_tags ct WHERE ${where}`).get(...params).c;
-    const list = db.prepare(`SELECT ct.id, ct.customer_name, ct.tag, ct.dealer_code, c.city, c.service_dealers_summary, ct.updated_at
+    const list = db.prepare(`SELECT ct.id, ct.customer_name, ct.tag, ct.dealer_code, d.dealer_name as tag_dealer_name, c.city, c.service_dealers_summary, ct.updated_at
       FROM customer_tags ct
       LEFT JOIN customers c ON ct.customer_name = c.customer_name
+      LEFT JOIN dealers d ON ct.dealer_code = d.dealer_code
       WHERE ${where} ORDER BY ct.updated_at DESC LIMIT ? OFFSET ?`)
       .all(...params, Number(size), (Number(page) - 1) * Number(size));
 
@@ -88,16 +89,17 @@ router.get('/export', (req, res) => {
     params.push(tag);
   }
 
-  const list = db.prepare(`SELECT ct.customer_name, ct.tag, ct.dealer_code, c.city, c.service_dealers_summary, ct.updated_at
+  const list = db.prepare(`SELECT ct.customer_name, ct.tag, ct.dealer_code, d.dealer_name as tag_dealer_name, c.city, c.service_dealers_summary, ct.updated_at
     FROM customer_tags ct
     LEFT JOIN customers c ON ct.customer_name = c.customer_name
+    LEFT JOIN dealers d ON ct.dealer_code = d.dealer_code
     WHERE ${where} ORDER BY ct.updated_at DESC`).all(...params);
 
   const tagMap = { core: '核心', focus: '焦点', oasis: '绿洲', desert: '沙漠' };
   const data = list.map(r => ({
     '客户名称': r.customer_name,
     '标签': tagMap[r.tag] || r.tag,
-    '经销商代码': r.dealer_code,
+    '打标签经销商': r.tag_dealer_name || r.dealer_code,
     '所在市': r.city || '',
     '服务经销商': r.service_dealers_summary || '',
     '更新时间': r.updated_at || ''
