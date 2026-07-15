@@ -13,18 +13,29 @@ router.use(authMiddleware, adminOnly);
 const upload = multer({ dest: path.join(__dirname, '../../uploads/temp') });
 
 // GET /api/admin/customer-tags/list - 客户标签列表
-// 按经销商隔离：只显示当前登录经销商的标签
+// 按经销商隔离：普通用户只看自己的，admin 可以看全部或指定经销商
 router.get('/list', (req, res) => {
   try {
     const { page = 1, size = 20, keyword, tag, dealer_code } = req.query;
     const db = getDb();
     const currentDealerCode = req.user.dealer_code;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'admin_test';
     
-    // 优先使用传入的 dealer_code，否则使用当前用户的经销商
-    const targetDealer = dealer_code || currentDealerCode;
+    // admin 可以指定经销商，或查看全部
+    // 非admin 只能看自己经销商的
+    let where = '1=1';
+    const params = [];
     
-    let where = 'ct.dealer_code = ?';
-    const params = [targetDealer];
+    if (dealer_code) {
+      // 指定了经销商
+      where += ' AND ct.dealer_code = ?';
+      params.push(dealer_code);
+    } else if (!isAdmin && currentDealerCode) {
+      // 非admin 且有经销商，只看自己的
+      where += ' AND ct.dealer_code = ?';
+      params.push(currentDealerCode);
+    }
+    // admin 且没指定经销商 = 看全部
 
     if (keyword) {
       where += ' AND ct.customer_name LIKE ?';
@@ -42,7 +53,7 @@ router.get('/list', (req, res) => {
       WHERE ${where} ORDER BY ct.updated_at DESC LIMIT ? OFFSET ?`)
       .all(...params, Number(size), (Number(page) - 1) * Number(size));
 
-    res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size), dealer_code: targetDealer } });
+    res.json({ code: 0, data: { total, list, page: Number(page), size: Number(size) } });
   } catch (err) {
     console.error('[CustomerTags List Error]', err.message, err.stack);
     res.status(500).json({ code: 500, msg: err.message });
@@ -50,14 +61,23 @@ router.get('/list', (req, res) => {
 });
 
 // GET /api/admin/customer-tags/export - 导出客户标签
+// admin 可以导出全部或指定经销商，非admin只能导出自己的
 router.get('/export', (req, res) => {
   const { keyword, tag, dealer_code } = req.query;
   const db = getDb();
   const currentDealerCode = req.user.dealer_code;
-  const targetDealer = dealer_code || currentDealerCode;
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'admin_test';
   
-  let where = 'ct.dealer_code = ?';
-  const params = [targetDealer];
+  let where = '1=1';
+  const params = [];
+  
+  if (dealer_code) {
+    where += ' AND ct.dealer_code = ?';
+    params.push(dealer_code);
+  } else if (!isAdmin && currentDealerCode) {
+    where += ' AND ct.dealer_code = ?';
+    params.push(currentDealerCode);
+  }
 
   if (keyword) {
     where += ' AND ct.customer_name LIKE ?';
@@ -88,7 +108,8 @@ router.get('/export', (req, res) => {
   XLSX.utils.book_append_sheet(wb, ws, '客户标签');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-  res.setHeader('Content-Disposition', `attachment; filename=customer_tags_${targetDealer}_${Date.now()}.xlsx`);
+  const filename = dealer_code ? `customer_tags_${dealer_code}_${Date.now()}` : `customer_tags_all_${Date.now()}`;
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);
 });
@@ -110,16 +131,26 @@ router.get('/template', (req, res) => {
 });
 
 // POST /api/admin/customer-tags/import - 导入客户标签
-// 导入的标签会关联到当前登录用户的经销商
+// admin 可以指定经销商，非admin只能导入到自己的经销商
 router.post('/import', upload.single('file'), (req, res) => {
   if (!req.file) return res.json({ code: 400, msg: '请上传文件' });
 
   const db = getDb();
-  const dealerCode = req.user.dealer_code;
+  const currentDealerCode = req.user.dealer_code;
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'admin_test';
   
-  if (!dealerCode) {
+  // 从请求体获取目标经销商（admin可以指定）
+  const targetDealer = req.body.dealer_code || currentDealerCode;
+  
+  if (!targetDealer) {
     fs.unlinkSync(req.file.path);
-    return res.json({ code: 400, msg: '用户未关联经销商' });
+    return res.json({ code: 400, msg: '未指定经销商' });
+  }
+  
+  // 非admin不能导入到其他经销商
+  if (!isAdmin && req.body.dealer_code && req.body.dealer_code !== currentDealerCode) {
+    fs.unlinkSync(req.file.path);
+    return res.json({ code: 403, msg: '无权导入到其他经销商' });
   }
 
   const tagMapReverse = { '核心': 'core', '焦点': 'focus', '绿洲': 'oasis', '沙漠': 'desert' };
@@ -151,7 +182,7 @@ router.post('/import', upload.single('file'), (req, res) => {
       if (!customer) { fail++; continue; }
 
       try {
-        insertStmt.run(name, dealerCode, tag);
+        insertStmt.run(name, targetDealer, tag);
         success++;
       } catch (e) {
         fail++;
@@ -161,7 +192,7 @@ router.post('/import', upload.single('file'), (req, res) => {
     // 清理临时文件
     fs.unlinkSync(req.file.path);
 
-    res.json({ code: 0, data: { total: rows.length, success, fail, dealer_code: dealerCode }, msg: '导入完成' });
+    res.json({ code: 0, data: { total: rows.length, success, fail, dealer_code: targetDealer }, msg: '导入完成' });
   } catch (e) {
     if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.json({ code: 500, msg: e.message });
@@ -169,15 +200,28 @@ router.post('/import', upload.single('file'), (req, res) => {
 });
 
 // POST /api/admin/customer-tags/set - 手动设置客户标签
+// admin 可以为任何经销商设置，非admin只能给自己设置
 router.post('/set', (req, res) => {
   const { customer_name, tag, dealer_code } = req.body;
   if (!customer_name) return res.json({ code: 400, msg: '客户名称不能为空' });
   
   const db = getDb();
-  const targetDealer = dealer_code || req.user.dealer_code;
+  const currentDealerCode = req.user.dealer_code;
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'admin_test';
+  
+  // admin 可以指定经销商，非admin只能给自己设置
+  let targetDealer = dealer_code;
+  if (!targetDealer && currentDealerCode) {
+    targetDealer = currentDealerCode;
+  }
   
   if (!targetDealer) {
     return res.json({ code: 400, msg: '未指定经销商' });
+  }
+  
+  // 非admin不能给其他经销商设置标签
+  if (!isAdmin && dealer_code && dealer_code !== currentDealerCode) {
+    return res.json({ code: 403, msg: '无权为其他经销商设置标签' });
   }
 
   try {
@@ -202,7 +246,7 @@ router.post('/set', (req, res) => {
         .run(customer_name, targetDealer);
     }
 
-    res.json({ code: 0, msg: '标签设置成功' });
+    res.json({ code: 0, msg: '标签设置成功', dealer_code: targetDealer });
   } catch (e) {
     console.error('[Set Customer Tag Error]', e.message);
     res.json({ code: 500, msg: e.message });
@@ -210,16 +254,18 @@ router.post('/set', (req, res) => {
 });
 
 // DELETE /api/admin/customer-tags/:id - 删除客户标签
+// admin 可以删除任何标签，非admin只能删除自己经销商的
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const currentDealerCode = req.user.dealer_code;
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'admin_test';
   
   // 查询标签记录
   const tagRecord = db.prepare('SELECT customer_name, dealer_code FROM customer_tags WHERE id = ?').get(req.params.id);
   if (!tagRecord) return res.json({ code: 404, msg: '标签记录不存在' });
   
-  // 只能删除自己经销商的标签
-  if (tagRecord.dealer_code !== currentDealerCode) {
+  // 非admin只能删除自己经销商的标签
+  if (!isAdmin && tagRecord.dealer_code !== currentDealerCode) {
     return res.json({ code: 403, msg: '无权删除其他经销商的标签' });
   }
 
