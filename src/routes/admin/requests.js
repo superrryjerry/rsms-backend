@@ -40,6 +40,28 @@ router.post('/:id/approve', (req, res) => {
       if (!target) throw new Error('转移目标经销商为空');
       db.prepare("UPDATE vehicles SET service_dealer = ?, updated_at = datetime('now') WHERE vin = ?")
         .run(target, request.vin);
+    } else if (request.request_type === 'change_customer') {
+      // 更改车辆所属客户
+      const newCustomerName = request.new_customer_name;
+      if (!newCustomerName) throw new Error('新客户名称为空');
+      
+      // 记录曾用名到历史表
+      db.prepare('INSERT INTO vehicle_customer_history (vin, old_customer_name, new_customer_name, changed_by, request_id) VALUES (?, ?, ?, ?, ?)')
+        .run(request.vin, request.old_customer_name, newCustomerName, request.request_dealer, request.id);
+      
+      // 更新车辆客户名
+      db.prepare("UPDATE vehicles SET customer_name = ?, updated_at = datetime('now') WHERE vin = ?")
+        .run(newCustomerName, request.vin);
+      
+      // 如果新客户不存在于customers表，自动创建
+      const newCustomerExists = db.prepare('SELECT id FROM customers WHERE customer_name = ?').get(newCustomerName);
+      if (!newCustomerExists) {
+        db.prepare('INSERT INTO customers (customer_name) VALUES (?)').run(newCustomerName);
+      }
+      
+      // 更新新旧客户的汇总
+      if (request.old_customer_name) updateCustomerSummary(db, request.old_customer_name);
+      updateCustomerSummary(db, newCustomerName);
     }
     const vehicle = db.prepare('SELECT customer_name FROM vehicles WHERE vin = ?').get(request.vin);
     if (vehicle?.customer_name) updateCustomerSummary(db, vehicle.customer_name);

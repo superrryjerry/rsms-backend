@@ -67,10 +67,14 @@ router.get('/detail/:vin', (req, res) => {
     }
   }
 
-  // 管理员或无归属经销商的用户可查看所有车辆
+  // 查询最近一次客户改名记录（曾用名）
+  const customerHistory = db.prepare(
+    `SELECT * FROM vehicle_customer_history WHERE vin = ? ORDER BY created_at DESC LIMIT 1`
+  ).get(req.params.vin);
+
   const permission = (req.user.role === 'admin' || !req.user.dealer_code || vehicle.service_dealer === req.user.dealer_code) ? 'editable' : 'readonly';
 
-  res.json({ code: 0, data: { ...vehicle, vehicle_age: vehicleAge, permission, contracts, work_orders: workOrders } });
+  res.json({ code: 0, data: { ...vehicle, vehicle_age: vehicleAge, permission, contracts, work_orders: workOrders, customer_history: customerHistory || null } });
 });
 
 // POST /api/vehicles/drop - 丢公海池（需归属权）
@@ -205,6 +209,52 @@ router.get('/my-requests', (req, res) => {
     WHERE r.request_user_id = ? ORDER BY r.created_at DESC`)
     .all(req.user.id);
   res.json({ code: 0, data: list });
+});
+
+// POST /api/vehicles/change-customer - 申请更改车辆所属客户
+router.post('/change-customer', (req, res) => {
+  const { vin, new_customer_name, reason } = req.body;
+  if (!vin || !new_customer_name) return res.status(400).json({ code: 400, msg: '缺少必要参数' });
+
+  const db = getDb();
+  const vehicle = db.prepare('SELECT * FROM vehicles WHERE vin = ?').get(vin);
+  if (!vehicle) return res.status(404).json({ code: 404, msg: '车辆不存在' });
+
+  // 权限检查：管理员或当前归属经销商可申请
+  let canApply = false;
+  if (req.user.role === 'admin') {
+    canApply = true;
+  } else if (vehicle.service_dealer === req.user.dealer_code) {
+    canApply = true;
+  } else {
+    // 一级经销商可以申请改下属二级的车辆
+    const userDealer = db.prepare('SELECT * FROM dealers WHERE dealer_code = ?').get(req.user.dealer_code);
+    if (userDealer && userDealer.level === 1) {
+      const isSub = db.prepare('SELECT COUNT(*) as c FROM dealers WHERE dealer_code = ? AND parent_dealer_code = ?')
+        .get(vehicle.service_dealer, req.user.dealer_code);
+      if (isSub && isSub.c > 0) canApply = true;
+    }
+  }
+
+  if (!canApply) {
+    return res.status(403).json({ code: 403, msg: '无权申请更改此车辆的客户' });
+  }
+
+  // 如果新客户名跟当前一样，直接拒绝
+  if (vehicle.customer_name === new_customer_name) {
+    return res.status(400).json({ code: 400, msg: '新客户名称与当前一致，无需更改' });
+  }
+
+  // 去重检查
+  const dup = db.prepare('SELECT id FROM service_dealer_requests WHERE vin = ? AND status = ? AND request_type = ?')
+    .get(vin, 'pending', 'change_customer');
+  if (dup) return res.status(400).json({ code: 400, msg: '已有待审批的客户改名申请' });
+
+  db.prepare(`INSERT INTO service_dealer_requests (vin, current_dealer, request_dealer, request_user_id, request_type, reason, old_customer_name, new_customer_name)
+    VALUES (?, ?, ?, ?, 'change_customer', ?, ?, ?)`)
+    .run(vin, vehicle.service_dealer, req.user.dealer_code || 'admin', req.user.id, reason || '', vehicle.customer_name, new_customer_name);
+
+  res.json({ code: 0, msg: '客户改名申请已提交，等待管理员审批' });
 });
 
 // GET /api/vehicles/export - 导出车辆列表

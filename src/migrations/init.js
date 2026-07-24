@@ -105,6 +105,43 @@ try {
   console.log('[Migration] login_logs table skipped:', e.message);
 }
 
+// 客户改名申请表迁移（service_dealer_requests 增加客户改名字段）
+try {
+  const reqInfo = db.prepare('PRAGMA table_info(service_dealer_requests)').all();
+  if (!reqInfo.some(col => col.name === 'old_customer_name')) {
+    db.prepare('ALTER TABLE service_dealer_requests ADD COLUMN old_customer_name VARCHAR(128)').run();
+    console.log('[Migration] Added service_dealer_requests.old_customer_name');
+  }
+  if (!reqInfo.some(col => col.name === 'new_customer_name')) {
+    db.prepare('ALTER TABLE service_dealer_requests ADD COLUMN new_customer_name VARCHAR(128)').run();
+    console.log('[Migration] Added service_dealer_requests.new_customer_name');
+  }
+} catch (e) {
+  console.log('[Migration] service_dealer_requests 改名字段跳过:', e.message);
+}
+
+// 车辆客户曾用名记录表
+try {
+  const vehicleCustomerHistoryInfo = db.prepare('PRAGMA table_info(vehicle_customer_history)').all();
+  if (vehicleCustomerHistoryInfo.length === 0) {
+    db.exec(`
+      CREATE TABLE vehicle_customer_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vin VARCHAR(32) NOT NULL,
+        old_customer_name VARCHAR(128),
+        new_customer_name VARCHAR(128),
+        changed_by VARCHAR(32),
+        request_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_vch_vin ON vehicle_customer_history(vin);
+    `);
+    console.log('[Migration] Created vehicle_customer_history table');
+  }
+} catch (e) {
+  console.log('[Migration] vehicle_customer_history table skipped:', e.message);
+}
+
 // 客户标签关联表迁移（支持按经销商隔离）
 try {
   const customerTagsInfo = db.prepare('PRAGMA table_info(customer_tags)').all();

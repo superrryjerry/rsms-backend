@@ -39,7 +39,7 @@ router.get('/', (req, res) => {
     if (myVins.length > 0) {
       const placeholders = myVins.map(() => '?').join(',');
       const activeVins = db.prepare(
-        `SELECT DISTINCT vin FROM work_orders WHERE vin IN (${placeholders}) AND order_date >= datetime('now', '-8 months')`
+        `SELECT DISTINCT vin FROM work_orders WHERE vin IN (${placeholders}) AND order_date >= datetime('now', '-6 months')`
       ).all(...myVins).map(a => a.vin);
       inactiveVehicleCount = myVins.length - activeVins.length;
     }
@@ -52,7 +52,7 @@ router.get('/', (req, res) => {
     if (myCustomers.length > 0) {
       const placeholders = myCustomers.map(() => '?').join(',');
       const activeCustomers = db.prepare(
-        `SELECT DISTINCT v.customer_name FROM work_orders w JOIN vehicles v ON w.vin = v.vin WHERE v.customer_name IN (${placeholders}) AND w.order_date >= datetime('now', '-8 months')`
+        `SELECT DISTINCT v.customer_name FROM work_orders w JOIN vehicles v ON w.vin = v.vin WHERE v.customer_name IN (${placeholders}) AND w.order_date >= datetime('now', '-6 months')`
       ).all(...myCustomers).map(c => c.customer_name);
       inactiveCustomerCount = myCustomers.length - activeCustomers.length;
     }
@@ -71,7 +71,7 @@ router.get('/', (req, res) => {
   });
 });
 
-// GET /api/dashboard/inactive-vehicles - 超8个月无工单车辆列表
+// GET /api/dashboard/inactive-vehicles - 超6个月无工单车辆列表
 router.get('/inactive-vehicles', (req, res) => {
   const db = getDb();
   const dealerCode = req.user.dealer_code;
@@ -98,11 +98,11 @@ router.get('/inactive-vehicles', (req, res) => {
     GROUP BY v.vin
   `).all(...myVins);
   
-  const eightMonthsAgo = new Date();
-  eightMonthsAgo.setMonth(eightMonthsAgo.getMonth() - 8);
-  const cutoffDate = eightMonthsAgo.toISOString().split('T')[0];
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
   
-  // 筛选超8个月无工单的车辆
+  // 筛选超6个月无工单的车辆
   const inactiveVehicles = vehiclesWithLastOrder
     .filter(v => !v.last_order_date || v.last_order_date < cutoffDate)
     .map(v => {
@@ -127,7 +127,7 @@ router.get('/inactive-vehicles', (req, res) => {
   res.json({ code: 0, data: inactiveVehicles });
 });
 
-// GET /api/dashboard/inactive-customers - 超8个月无工单客户列表
+// GET /api/dashboard/inactive-customers - 超6个月无工单客户列表
 router.get('/inactive-customers', (req, res) => {
   const db = getDb();
   const dealerCode = req.user.dealer_code;
@@ -154,11 +154,11 @@ router.get('/inactive-customers', (req, res) => {
     GROUP BY v.customer_name
   `).all(...myCustomers);
   
-  const eightMonthsAgo = new Date();
-  eightMonthsAgo.setMonth(eightMonthsAgo.getMonth() - 8);
-  const cutoffDate = eightMonthsAgo.toISOString().split('T')[0];
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
   
-  // 筛选超8个月无工单的客户
+  // 筛选超6个月无工单的客户
   const inactiveCustomers = customersWithLastOrder
     .filter(c => !c.last_order_date || c.last_order_date < cutoffDate)
     .map(c => {
